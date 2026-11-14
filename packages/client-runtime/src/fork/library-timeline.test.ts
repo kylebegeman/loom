@@ -12,9 +12,9 @@ import {
   toggleLibraryTimelineFilter,
 } from "./library-timeline.ts";
 
-const dorothy = EnvironmentId.make("dorothy");
+const maple = EnvironmentId.make("maple");
 const conversation = { id: "conv-1", threadId: ThreadId.make("thread-1"), title: "Fix login" };
-const started = (sequence: number, environmentId: EnvironmentId | null = dorothy) =>
+const started = (sequence: number, environmentId: EnvironmentId | null = maple) =>
   ({
     sequence,
     at: "2026-10-10T00:00:00.000Z",
@@ -26,7 +26,7 @@ const pullRequest = (url: string) =>
   ({
     sequence: 1,
     at: "2026-10-10T00:00:00.000Z",
-    environmentId: dorothy,
+    environmentId: maple,
     kind: "pull-request-merged",
     conversation,
     pullRequest: { url, repository: "kylebegeman/loom", number: 12, title: null },
@@ -65,7 +65,7 @@ describe("timeline activity", () => {
   const base = {
     sequence: 1,
     at: "2026-10-10T00:00:00.000Z",
-    environmentId: dorothy,
+    environmentId: maple,
     copy: { id: "copy", rootPath: "/work/loom" },
   };
   const entry = (fields: object) => ({ ...base, ...fields }) as LibraryTimelineEntry;
@@ -165,12 +165,12 @@ describe("mergeLibraryTimelinePage", () => {
 });
 
 describe("libraryTimelineEntryLink", () => {
-  const connected = (id: EnvironmentId) => id === dorothy;
+  const connected = (id: EnvironmentId) => id === maple;
 
   it("opens the live thread while its computer is connected", () => {
     expect(libraryTimelineEntryLink(started(1), connected)).toEqual({
       kind: "thread",
-      environmentId: dorothy,
+      environmentId: maple,
       threadId: "thread-1",
     });
   });
@@ -196,7 +196,7 @@ describe("libraryTimelineEntryLink", () => {
     ).toEqual({ kind: "pull-request", url: "https://github.com/kylebegeman/loom/pull/12" });
     expect(libraryTimelineEntryLink(pullRequest("javascript:alert(1)"), connected)).toEqual({
       kind: "thread",
-      environmentId: dorothy,
+      environmentId: maple,
       threadId: "thread-1",
     });
   });
@@ -205,7 +205,7 @@ describe("libraryTimelineEntryLink", () => {
     const copy = {
       sequence: 1,
       at: "2026-10-10T00:00:00.000Z",
-      environmentId: dorothy,
+      environmentId: maple,
       kind: "copy-added",
       copy: { id: "copy", rootPath: "/work/loom" },
     } as LibraryTimelineEntry;

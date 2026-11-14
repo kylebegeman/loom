@@ -288,14 +288,14 @@ Windows investigation while that suite is not a required gate.
 
 ### Sites consumer contract
 
-The begam.in backend exports a synthetic `contracts/sites-consumer.json` bundle with
+The personal API backend exports a synthetic `contracts/sites-consumer.json` bundle with
 `formatVersion: 1` and named `sites-list` and `site-analytics` responses. After changing
 that integration, generate the bundle in the backend repository, then sync it here:
 
 ```sh
-vp run sites:contract:sync --source /path/to/begam.in/contracts/sites-consumer.json
+vp run sites:contract:sync --source /path/to/api-backend/contracts/sites-consumer.json
 vp test run packages/contracts/src/fork/sites.test.ts
-vp run sites:contract:sync --source /path/to/begam.in/contracts/sites-consumer.json --check
+vp run sites:contract:sync --source /path/to/api-backend/contracts/sites-consumer.json --check
 ```
 
 `--source` is required. Sync formats the fixture with the repository formatter. `--check`

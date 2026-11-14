@@ -63,7 +63,7 @@ const harness = Effect.gen(function* () {
           isPackaged: true,
           isDevelopment: false,
           resourcesPath: "/Applications/Loom.app/Contents/Resources",
-          homeDirectory: "/Users/k",
+          homeDirectory: "/Users/me",
           stateDir,
           ...overrides,
         } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
@@ -169,7 +169,7 @@ it.layer(NodeServices.layer)("OpenAtLogin", (it) => {
         for (const overrides of [
           { isPackaged: false },
           { isDevelopment: true },
-          { resourcesPath: "/Users/k/Downloads/Loom.app/Contents/Resources" },
+          { resourcesPath: "/Users/me/Downloads/Loom.app/Contents/Resources" },
         ]) {
           const service = yield* h.launch(overrides);
           yield* service.reconcile;

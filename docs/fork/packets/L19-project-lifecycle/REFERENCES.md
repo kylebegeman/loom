@@ -21,9 +21,9 @@ Removing shut-down simulators and DerivedData took free space from 53 to 148 GB.
   modelled checkout safety and reclamation, not build output; nothing from it is reused in
   phase 1. Its file-by-file review and the earlier manual Repositories-page proposal are kept
   in this packet's history at `e2c69a1bcd` as prior art.
-- [Projects and Execution](https://github.com/bagelvault/loom/blob/a79ec506/docs/architecture/loom-projects-and-execution.md),
-  [retained project working copies](https://github.com/bagelvault/loom/blob/a79ec506/docs/technical/retained-project-workspaces.md),
-  [runner-backed provider execution](https://github.com/bagelvault/loom/blob/a79ec506/docs/technical/runner-provider-turn-gateway.md):
+- `Projects and Execution`,
+  `retained project working copies`,
+  `runner-backed provider execution`:
   persistent-machine background; the runner system is what this fork avoids rebuilding.
 
 ## Upstream T3 Code

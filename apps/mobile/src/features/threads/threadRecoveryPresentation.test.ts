@@ -17,8 +17,8 @@ const ready = {
   canOperate: true,
 };
 
-const dorothy = {
-  label: "Dorothy",
+const maple = {
+  label: "Maple",
   signIn: false,
   stallTitle: null,
   directoryHealth: null,
@@ -30,10 +30,10 @@ describe("thread recovery for a computer that needs more than a reconnect", () =
       ...ready,
       connectionState: "error",
       queuedMessages: [{ messageId: "one" }, { messageId: "two" }],
-      computer: { ...dorothy, signIn: true },
+      computer: { ...maple, signIn: true },
     });
     expect(result).toEqual({
-      title: "Sign in to Dorothy again",
+      title: "Sign in to Maple again",
       detail: "Your sign-in expired. Loom sends your 2 queued messages once you sign in.",
       action: "identity",
     });
@@ -45,12 +45,12 @@ describe("thread recovery for a computer that needs more than a reconnect", () =
       connectionState: "reconnecting",
       queuedMessages: [{ messageId: "one", deliveryAttempted: true }],
       computer: {
-        ...dorothy,
-        stallTitle: "Can't reach Dorothy since 3:04 PM",
+        ...maple,
+        stallTitle: "Can't reach Maple since 3:04 PM",
         directoryHealth: "Running, but not reachable from here.",
       },
     });
-    expect(result).toMatchObject({ title: "Can't reach Dorothy since 3:04 PM", action: "retry" });
+    expect(result).toMatchObject({ title: "Can't reach Maple since 3:04 PM", action: "retry" });
     expect(result?.detail).toBe(
       "Loom keeps trying. Running, but not reachable from here. Your message may already have arrived, and Loom confirms delivery after reconnecting. You do not need to send it again.",
     );
@@ -61,7 +61,7 @@ describe("thread recovery for a computer that needs more than a reconnect", () =
       resolveThreadRecoveryPresentation({
         ...ready,
         connectionState: "reconnecting",
-        computer: dorothy,
+        computer: maple,
       }),
     ).toMatchObject({ title: "Reconnecting", action: "reconnect" });
   });

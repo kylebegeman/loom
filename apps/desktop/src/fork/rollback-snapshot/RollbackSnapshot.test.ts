@@ -24,9 +24,9 @@ describe("rollbackSnapshotPaths", () => {
       isPackaged: true,
       isDevelopment: false,
       resourcesPath: "/Applications/Loom.app/Contents/Resources",
-      homeDirectory: "/Users/k",
-      appDataDirectory: "/Users/k/Library/Application Support",
-      stateDir: "/Users/k/.t3/userdata",
+      homeDirectory: "/Users/me",
+      appDataDirectory: "/Users/me/Library/Application Support",
+      stateDir: "/Users/me/.t3/userdata",
       ...overrides,
     }) as unknown as DesktopEnvironment.DesktopEnvironment["Service"];
 
@@ -36,15 +36,15 @@ describe("rollbackSnapshotPaths", () => {
       const at = (overrides: Record<string, unknown>) =>
         rollbackSnapshotPaths(environment({ path, ...overrides }));
       assert.deepEqual(at({}), {
-        buildsDirectory: "/Users/k/Library/Application Support/Loom Builds",
+        buildsDirectory: "/Users/me/Library/Application Support/Loom Builds",
         buildEnvPath: "/Applications/Loom.app/Contents/Resources/loom-build.env",
-        userdata: "/Users/k/.t3/userdata",
+        userdata: "/Users/me/.t3/userdata",
       });
       assert.isNull(at({ isPackaged: false }));
       assert.isNull(at({ isDevelopment: true }));
       assert.isNull(at({ platform: "win32" }));
-      assert.isNull(at({ resourcesPath: "/Users/k/Downloads/Loom.app/Contents/Resources" }));
-      assert.isNull(at({ stateDir: "/Users/k/.t3/dev" }));
+      assert.isNull(at({ resourcesPath: "/Users/me/Downloads/Loom.app/Contents/Resources" }));
+      assert.isNull(at({ stateDir: "/Users/me/.t3/dev" }));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

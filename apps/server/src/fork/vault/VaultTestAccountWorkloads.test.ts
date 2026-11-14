@@ -1540,7 +1540,7 @@ b=payload["binding"]
 now=datetime.fromtimestamp(b["startedAt"]/1000,timezone.utc)
 request=inbox.Request(b["correlationId"],now,b["expectedSender"])
 bad=("From: "+request.expected_sender+"\\nTo: "+request.recipient+"\\nContent-Type: text/plain; charset=unknown-8bit\\n\\nWelcome").encode()
-client=FixtureClient({1:message(recipient="vault+loom-"+"f"*32+"@begam.in"),2:message(recipient=request.recipient,sender=request.expected_sender,text="synthetic-mail-body-canary"),3:bad})
+client=FixtureClient({1:message(recipient="vault+loom-"+"f"*32+"@example.com"),2:message(recipient=request.recipient,sender=request.expected_sender,text="synthetic-mail-body-canary"),3:bad})
 client.arrivals={uid:now for uid in client.bodies}
 result=inbox.read_once(CREDENTIALS,request,connect=lambda:client,clock=lambda:now)
 uids=[entry["uid"] for entry in result["messages"]]
@@ -1610,7 +1610,7 @@ const syntheticMailDelivery = Effect.fnUntraced(function* (
     readerItemId,
     readerItemVersion: 1,
     correlationId: f.id(),
-    expectedSender: "qa@begam.in",
+    expectedSender: "qa@example.com",
     startedAt: yield* Clock.currentTimeMillis,
     expiresAt: broker.prepared.report.expiresAt,
   };
@@ -1694,7 +1694,7 @@ it.effect(
         expect(result.candidates).toEqual([
           { uid: 3, status: "unusable", reason: "unsupported-text-encoding" },
         ]);
-        expect(result.recipient).toBe(`vault+loom-${m.binding.correlationId}@begam.in`);
+        expect(result.recipient).toBe(`vault+loom-${m.binding.correlationId}@example.com`);
         expect(m.binding.correlationId).not.toBe(m.binding.runId);
         for (const canary of [
           "synthetic-mail-body-canary",

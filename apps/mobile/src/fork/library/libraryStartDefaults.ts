@@ -26,7 +26,7 @@ import { libraryConversationModels } from "./libraryModels";
 export interface LibraryStartDefaults {
   readonly environmentId: EnvironmentId;
   readonly copyId: string;
-  /** For example "Dorothy · GPT 6.0 Astra · Full access". */
+  /** For example "Maple · GPT 6.0 Astra · Full access". */
   readonly summary: string;
 }
 

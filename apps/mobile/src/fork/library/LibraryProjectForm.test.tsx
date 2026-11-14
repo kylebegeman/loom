@@ -413,7 +413,7 @@ describe("Edit project", () => {
           id: "copy",
           projectId: "project",
           projectRevision: 1,
-          environmentId: "dorothy",
+          environmentId: "maple",
           rootPath: "/work/corbelo",
           repositories: [
             {

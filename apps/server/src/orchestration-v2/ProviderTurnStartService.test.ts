@@ -2868,7 +2868,7 @@ effectIt.effect.each([
   ["mobile", "Show me the new settings screen", true],
   ["web", "Show me the new settings screen", false],
   ["mobile", "/review", false],
-  ["mobile", "/Users/kyle/app/main.ts crashes on launch", true],
+  ["mobile", "/Users/me/app/main.ts crashes on launch", true],
 ] as const)("a %s message %j carries the phone note: %s", ([creationSource, text, noted]) =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({

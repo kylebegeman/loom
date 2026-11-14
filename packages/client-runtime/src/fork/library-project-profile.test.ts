@@ -12,7 +12,7 @@ import {
   libraryToolText,
 } from "./library-project-profile.ts";
 
-const dorothy = EnvironmentId.make("dorothy");
+const maple = EnvironmentId.make("maple");
 const script = (id: string): ProjectScript => ({
   id,
   name: id,
@@ -24,7 +24,7 @@ const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
   id: "copy",
   projectId: "project",
   projectRevision: 1,
-  environmentId: dorothy,
+  environmentId: maple,
   rootPath: "/work/aspectavy",
   repositories: [],
   ownership: "managed",
@@ -33,7 +33,7 @@ const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
   updatedAt: "2026-10-10T00:00:00.000Z",
   ...patch,
 });
-const local = (id: string, scripts: ProjectScript[], environmentId = dorothy) => ({
+const local = (id: string, scripts: ProjectScript[], environmentId = maple) => ({
   environmentId,
   id: ProjectId.make(id),
   title: id,
@@ -144,11 +144,11 @@ describe("profile drafts", () => {
     expect(
       libraryProfileComputerIds(
         [
-          { environmentId: dorothy, supportsExecution: true },
+          { environmentId: maple, supportsExecution: true },
           { environmentId: EnvironmentId.make("viewer"), supportsExecution: false },
         ],
-        [gone, dorothy],
+        [gone, maple],
       ),
-    ).toEqual([dorothy, gone]);
+    ).toEqual([maple, gone]);
   });
 });

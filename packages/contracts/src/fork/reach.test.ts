@@ -33,30 +33,30 @@ const status = {
   state: "connected",
   enabled: true,
   blocked: null,
-  url: "https://studio-loom.begam.in/",
+  url: "https://studio-loom.example.org/",
   message: null,
   warnings: ["passkey-not-required"],
   prepared: null,
 };
 
 const ensureReply = {
-  hostname: "studio-loom.begam.in",
-  url: "https://studio-loom.begam.in/",
+  hostname: "studio-loom.example.org",
+  url: "https://studio-loom.example.org/",
   origin: "http://127.0.0.1:3773",
   connectorToken: "eyJhIjoiYWNjb3VudCJ9",
   edge: { allowlist: "ready", rateLimit: "occupied" },
   identity: {
     state: "ready",
-    issuer: "https://id.loom.begam.in",
+    issuer: "https://id.loom.example.org",
     nativeClientId: "loom-library-native",
-    resource: "https://loom.begam.in/computers/environment-a",
+    resource: "https://loom.example.org/computers/environment-a",
   },
 };
 
 describe("direct endpoints", () => {
   it("decodes a public reach address", () => {
     expect(
-      decodeEndpoint({ kind: "public", httpBaseUrl: "https://studio-loom.begam.in" }).kind,
+      decodeEndpoint({ kind: "public", httpBaseUrl: "https://studio-loom.example.org" }).kind,
     ).toBe("public");
   });
 
@@ -65,7 +65,7 @@ describe("direct endpoints", () => {
       directEndpoints: [
         { kind: "tailnet", httpBaseUrl: "https://studio.example.ts.net" },
         { kind: "satellite", httpBaseUrl: "https://studio.example.com" },
-        { kind: "public", httpBaseUrl: "https://studio-loom.begam.in" },
+        { kind: "public", httpBaseUrl: "https://studio-loom.example.org" },
       ],
     });
     expect(decoded.directEndpoints?.map((endpoint) => endpoint.kind)).toEqual([
@@ -224,7 +224,7 @@ describe("Library admin listing", () => {
   const computer = decodeLibraryComputer({
     environmentId: "environment-a",
     label: "Studio",
-    hostname: "studio-loom.begam.in",
+    hostname: "studio-loom.example.org",
     state: "removed-with-leftover",
     lastError: null,
     connection: "down",

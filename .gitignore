@@ -51,3 +51,6 @@ node_modules/
 
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
+
+# fork: personal-identifiers - the private deny list for scripts/fork/personal-identifiers.ts
+.personal-identifiers

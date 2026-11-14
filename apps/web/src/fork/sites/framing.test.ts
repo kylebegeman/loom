@@ -5,17 +5,17 @@ const APP = "https://app.t3.codes";
 
 describe("siteFrameUrl", () => {
   it("frames a path on the site's own origin", () => {
-    expect(siteFrameUrl("https://pages.bagels.top", "/blog/post?x=1", APP)).toBe(
-      "https://pages.bagels.top/blog/post?x=1",
+    expect(siteFrameUrl("https://pages.example.net", "/blog/post?x=1", APP)).toBe(
+      "https://pages.example.net/blog/post?x=1",
     );
-    expect(siteFrameUrl("https://pages.bagels.top/", "about", APP)).toBe(
-      "https://pages.bagels.top/about",
+    expect(siteFrameUrl("https://pages.example.net/", "about", APP)).toBe(
+      "https://pages.example.net/about",
     );
   });
 
   it("keeps a path that names another origin on the site", () => {
-    expect(siteFrameUrl("https://pages.bagels.top", "//evil.example/x", APP)).toBe(
-      "https://pages.bagels.top/",
+    expect(siteFrameUrl("https://pages.example.net", "//evil.example/x", APP)).toBe(
+      "https://pages.example.net/",
     );
   });
 

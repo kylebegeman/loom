@@ -6,22 +6,22 @@ Treat external repositories as references, not code to copy.
 
 "KiCad circuit board design and management": PCB preview (L24), split out in
 [selections.md](../../selections.md) (Outcomes); the workbench is the Electronics app. Old
-Loom (`bagelvault/loom` 0.13.10) had no KiCad integration; it had a tscircuit "Hardware
+Loom (the old private Loom repository 0.13.10) had no KiCad integration; it had a tscircuit "Hardware
 Studio" area:
 
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/studio/StudioHardwareSurface.tsx
+- `apps/web/src/components/studio/StudioHardwareSurface.tsx`
   (666 lines: board source editor, snapshot, BOM). Drop: a full authoring surface belongs to
   the Electronics app.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/studio/StudioHardwarePreview.tsx
+- `apps/web/src/components/studio/StudioHardwarePreview.tsx`
   (lazy `RunFrame` from `@tscircuit/runframe/runner`). Drop: in-browser evaluation of
   project code and heavy dependencies.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/studio/StudioHardwareSurface.logic.ts
+- `apps/web/src/components/studio/StudioHardwareSurface.logic.ts`
   (`evaluateCircuitJson` via `@tscircuit/eval`; render URLs pointing at
   `svg.tscircuit.com`). Drop: sends designs to an external service.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/hardwareStudio/Layers/HardwareStudio.ts
+- `apps/server/src/hardwareStudio/Layers/HardwareStudio.ts`
   (1,159 lines). Drop: its "export" wrote a marker file and a JSON manifest, never real
   outputs.
-- https://github.com/bagelvault/loom/blob/a79ec506/pnpm-workspace.yaml (lines 130-185:
+- `pnpm-workspace.yaml` (lines 130-185:
   `packageExtensions` needed just to install the tscircuit web packages). The main lesson:
   keep tscircuit out of the web bundle and call its CLI on the server.
 
@@ -62,7 +62,7 @@ Integration baseline: `23b9bdc48dc8ca3356df5b686c11e02a7519cb76`.
 
 - KiCad CLI reference (KiCad 10): https://docs.kicad.org/10.0/en/cli/cli.html. Flags used:
   `sch export svg --output --exclude-drawing-sheet`, `pcb export svg --layers --mode-single
---fit-page-to-board --exclude-drawing-sheet --drill-shape-opt`, `sch erc` / `pcb drc`
+  --fit-page-to-board --exclude-drawing-sheet --drill-shape-opt`, `sch erc` / `pcb drc`
   with `--format json --severity-all --units --exit-code-violations` (exit 5 on
   violations), `pcb drc --schematic-parity`. KiCad is GPL-3.0-or-later; this packet only
   runs the installed executable.
@@ -76,7 +76,7 @@ Integration baseline: `23b9bdc48dc8ca3356df5b686c11e02a7519cb76`.
   unverified; confirm its export/check flags on an installed KiCad 9 CLI. The attempt to
   read the official KiCad 9 CLI page returned HTTP 403 on 2026-10-07.
 - tscircuit CLI: https://docs.tscircuit.com/command-line/tsci-export (`tsci export <file>
--f schematic-svg|pcb-svg -o <path>`), https://docs.tscircuit.com/command-line/tsci-build
+  -f schematic-svg|pcb-svg -o <path>`), https://docs.tscircuit.com/command-line/tsci-build
   (entrypoint discovery, `*.circuit.tsx`, exit 1 on evaluation errors). tscircuit is MIT;
   this packet only runs the installed CLI. `tsci --version` and both export formats were verified with 0.0.2764 and Bun.
 - Reference repositories in selections.md: none are relevant to PCB rendering.

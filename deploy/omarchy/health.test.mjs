@@ -10,7 +10,7 @@ const config = {
   atlasUrl: "https://atlas.test",
   switchboardUrl: "http://100.64.0.1:8317",
   switchboardCli: "/private/switchboard",
-  switchboardStatusUrl: "https://dorothy.test/status",
+  switchboardStatusUrl: "https://maple.test/status",
   serverExecutable: "/private/t3",
   serverBaseDir: "/private/state",
 };
@@ -289,7 +289,7 @@ test("private connection status requires a usable catalog and checks the running
   );
   assert.deepEqual(
     urls.sort(),
-    ["http://127.0.0.1:3774/", "https://dorothy.test/api/v1/readiness?client=kyle"].sort(),
+    ["http://127.0.0.1:3774/", "https://maple.test/api/v1/readiness?client=kyle"].sort(),
   );
   assert.ok(
     calls.every(

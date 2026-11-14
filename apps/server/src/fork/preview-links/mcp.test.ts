@@ -35,8 +35,8 @@ const linkFor = (id: string, port: number, threadId: ThreadId | null): PreviewLi
   id,
   kind: "port",
   port,
-  host: `${port}-abc123-dorothy.bagels.top`,
-  url: `https://${port}-abc123-dorothy.bagels.top/`,
+  host: `${port}-abc123-maple.example.net`,
+  url: `https://${port}-abc123-maple.example.net/`,
   createdBy: threadId === null ? "owner" : "agent",
   threadId,
   laneId: null,
@@ -52,8 +52,8 @@ const snapshot = (links: ReadonlyArray<PreviewLink>): PreviewLinksSnapshot => ({
   setup: {
     settings: {
       enabled: true,
-      suffix: "bagels.top",
-      machine: "dorothy",
+      suffix: "example.net",
+      machine: "maple",
       defaultLifetime: "12h",
       gatewayPort: 3779,
     },
@@ -137,7 +137,7 @@ const makeService = () => {
 
 const pageFor = (id: string, threadId: ThreadId): PreviewPage => ({
   id,
-  url: `https://pages.bagels.top/p/${id}`,
+  url: `https://pages.example.net/p/${id}`,
   title: id,
   kind: "html",
   projectId: liveThreadShell(threadId).projectId,
@@ -272,7 +272,7 @@ it.effect("shares as the calling thread and returns only the canonical link", ()
       port: 41001,
       threadId: caller,
       createdBy: "agent",
-      url: "https://41001-abc123-dorothy.bagels.top/",
+      url: "https://41001-abc123-maple.example.net/",
     });
     expect(JSON.stringify(link)).not.toContain("__loom/enter");
   }),
@@ -400,7 +400,7 @@ it.effect("publishes from exactly one source as the calling thread", () =>
       title: "Render",
       attachmentId: "preview-caller-page-html",
     });
-    expect(page).toMatchObject({ threadId: caller, url: "https://pages.bagels.top/p/published" });
+    expect(page).toMatchObject({ threadId: caller, url: "https://pages.example.net/p/published" });
     expect(pages.calls.publish).toEqual([
       {
         threadId: caller,

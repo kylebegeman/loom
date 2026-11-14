@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
   navigate: vi.fn(),
   select: vi.fn(),
   refresh: vi.fn(),
-  noProject: { label: "Dorothy", start: vi.fn(async () => {}) } as {
+  noProject: { label: "Maple", start: vi.fn(async () => {}) } as {
     label: string;
     start: () => Promise<boolean | void>;
   } | null,
@@ -105,9 +105,9 @@ vi.mock("./state", async () => {
     },
     useLibraryProjects: () => {
       useRevision();
-      const dorothy = {
-        environmentId: "dorothy",
-        label: "Dorothy",
+      const maple = {
+        environmentId: "maple",
+        label: "Maple",
         entry: { enabled: true },
         connection: { phase: "connected" },
         serverConfig: {
@@ -120,8 +120,8 @@ vi.mock("./state", async () => {
       return {
         authorityId: state.authorityId,
         offline: state.offline,
-        environment: dorothy,
-        environments: [dorothy],
+        environment: maple,
+        environments: [maple],
         computers: [],
         query: { data: state.projects, isPending: false, refresh: state.refresh },
       };
@@ -317,7 +317,7 @@ const copy: LibraryWorkingCopy = {
   id: "alpha-copy",
   projectId: project.id,
   projectRevision: 1,
-  environmentId: EnvironmentId.make("dorothy"),
+  environmentId: EnvironmentId.make("maple"),
   rootPath: "/work/alpha",
   rootLocalProjectId: null,
   repositories: [],
@@ -376,7 +376,7 @@ beforeEach(async () => {
   state.pending = false;
   state.denied = new Set();
   state.features = ["project-library"];
-  state.noProject = { label: "Dorothy", start: vi.fn(async () => {}) };
+  state.noProject = { label: "Maple", start: vi.fn(async () => {}) };
   vi.clearAllMocks();
   container = document.createElement("div");
   document.body.append(container);
@@ -663,7 +663,7 @@ it("leads a new conversation with No project and starts it without opening a pro
 it("keeps a no-project launch pending in the picker and lets a failed launch be retried", async () => {
   let complete!: (started: boolean) => void;
   state.noProject = {
-    label: "Dorothy",
+    label: "Maple",
     start: vi.fn(
       () =>
         new Promise<boolean>((resolve) => {
@@ -673,10 +673,10 @@ it("keeps a no-project launch pending in the picker and lets a failed launch be 
   };
   await act(() => openLibraryAction("new-conversation"));
   await click("No project");
-  expect(container.textContent).toContain("Starting on Dorothy...");
+  expect(container.textContent).toContain("Starting on Maple...");
   expect(button("No project").disabled).toBe(true);
   await act(() => complete(false));
-  expect(container.textContent).toContain("Could not start on Dorothy. Try again.");
+  expect(container.textContent).toContain("Could not start on Maple. Try again.");
   expect(button("No project").disabled).toBe(false);
   await click("No project");
   await act(() => complete(true));
@@ -707,7 +707,7 @@ it("lets a project search beat No project when its computer shares the project's
 it("starts a ready project from Enter with the defaults its row shows, and offers its settings", async () => {
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   await act(() => openLibraryAction("new-conversation"));
-  expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
+  expect(container.textContent).toContain("Maple · GPT 6.0 Astra · Full access");
   // Enter is named for what it does on each row: Alpha cannot start yet, so it opens settings.
   expect(
     ["No project", "Beta", "Alpha", "New project", "Add existing folder"].map(
@@ -717,10 +717,10 @@ it("starts a ready project from Enter with the defaults its row shows, and offer
   await click("Beta");
   expect(launch()).toMatchObject({
     project: { id: second.id },
-    initialHostId: "dorothy",
+    initialHostId: "maple",
     autoStart: {
       launch: {
-        environmentId: "dorothy",
+        environmentId: "maple",
         workingCopyId: "beta-copy",
         modelSelection: { instanceId: "codex", model: "gpt-6" },
         runtimeMode: "full-access",
@@ -729,7 +729,7 @@ it("starts a ready project from Enter with the defaults its row shows, and offer
   });
   await click("Back");
   await click("Options Beta");
-  expect(launch()).toMatchObject({ project: { id: second.id }, initialHostId: "dorothy" });
+  expect(launch()).toMatchObject({ project: { id: second.id }, initialHostId: "maple" });
   expect(launch().autoStart).toBeNull();
   // Alpha has no copy holding its repository, so Enter shows the settings that explain it.
   await click("Back");
@@ -742,7 +742,7 @@ it("keeps inherited settings on the settings step instead of starting in one ste
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   await act(() => openLibraryAction("new-conversation", project.id, defaults));
   await click("Back");
-  expect(container.textContent).not.toContain("Dorothy · GPT 6.0 Astra");
+  expect(container.textContent).not.toContain("Maple · GPT 6.0 Astra");
   await click("Beta");
   expect(launch().autoStart).toBeNull();
 });
@@ -763,7 +763,7 @@ it("leads with the project where the user is, without opening its settings", asy
   });
   await click("Back");
   await click("Alpha");
-  expect(launch()).toMatchObject({ project: { id: project.id }, initialHostId: "dorothy" });
+  expect(launch()).toMatchObject({ project: { id: project.id }, initialHostId: "maple" });
   expect(launch().initialCopyId).toBeUndefined();
   expect(launch().initialResourceIds).toBeUndefined();
 });
@@ -778,17 +778,17 @@ it("starts and opens options for a suggested project on only what its row shows"
       { suggest: true },
     ),
   );
-  expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
+  expect(container.textContent).toContain("Maple · GPT 6.0 Astra · Full access");
   // The source thread's computer, copy and repository never replace what the row named.
   await click("Options Beta");
-  expect(launch()).toMatchObject({ initialHostId: "dorothy", autoStart: null });
+  expect(launch()).toMatchObject({ initialHostId: "maple", autoStart: null });
   expect(launch().initialCopyId).toBe("beta-copy");
   expect(launch().initialResourceId).toBeUndefined();
   await click("Back");
   await click("Beta");
   expect(launch()).toMatchObject({
-    initialHostId: "dorothy",
-    autoStart: { launch: { environmentId: "dorothy", workingCopyId: "beta-copy" } },
+    initialHostId: "maple",
+    autoStart: { launch: { environmentId: "maple", workingCopyId: "beta-copy" } },
   });
   expect(launch().initialCopyId).toBe("beta-copy");
   expect(launch().initialResourceId).toBeUndefined();
@@ -799,7 +799,7 @@ it("opens a promised row's options on the computer it named, and keeps them on r
   await click("Options Beta");
   expect(launch()).toMatchObject({
     project: { id: second.id },
-    initialHostId: "dorothy",
+    initialHostId: "maple",
     autoStart: null,
   });
   await type("Conversation title", "My draft");
@@ -813,17 +813,17 @@ it("opens a promised row's options on the computer it named, and keeps them on r
   expect(launch().initialHostId).toBeUndefined();
 });
 it.each([
-  { denied: "bindThread:dorothy" },
+  { denied: "bindThread:maple" },
   { denied: "registerThread:library" },
-  { denied: "executeOperation:dorothy", features: ["project-workflows"] },
-  { denied: "prepareCopy:dorothy" },
+  { denied: "executeOperation:maple", features: ["project-workflows"] },
+  { denied: "prepareCopy:maple" },
   { denied: "registerCopy:library" },
 ])("promises no start the settings would refuse without $denied", async (grant) => {
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   state.denied = new Set([grant.denied]);
   state.features = ["project-library", ...(grant.features ?? [])];
   await act(() => openLibraryAction("new-conversation"));
-  expect(container.textContent).not.toContain("Dorothy · GPT 6.0 Astra");
+  expect(container.textContent).not.toContain("Maple · GPT 6.0 Astra");
   expect(button("Beta").dataset.enter).toBe("Options");
   await click("Beta");
   expect(launch().autoStart).toBeNull();
@@ -832,13 +832,9 @@ it("still promises a start that needs none of the missing grants", async () => {
   // Loom manages this copy, so it is not prepared again, and this computer launches without
   // durable operations.
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id, ownership: "managed" }];
-  state.denied = new Set([
-    "prepareCopy:dorothy",
-    "registerCopy:library",
-    "executeOperation:dorothy",
-  ]);
+  state.denied = new Set(["prepareCopy:maple", "registerCopy:library", "executeOperation:maple"]);
   await act(() => openLibraryAction("new-conversation"));
-  expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
+  expect(container.textContent).toContain("Maple · GPT 6.0 Astra · Full access");
 });
 it("hides a suggested project that no longer loads instead of reporting an error", async () => {
   state.projects = [project];
@@ -853,21 +849,21 @@ it("opens a folder added after a start on that folder's computer", async () => {
   state.copies = [{ ...copy, id: "beta-laptop", projectId: second.id, environmentId: laptop }];
   await act(() => openLibraryAction("new-conversation"));
   await click("Beta");
-  expect(launch().initialHostId).toBe("dorothy");
+  expect(launch().initialHostId).toBe("maple");
   await click("Back");
   await click("Add existing folder");
   await click("Save");
   expect(launch()).toMatchObject({ initialHostId: laptop, initialCopyId: "beta-laptop" });
 });
 it("never lets the computer a start runs on decide which project a search finds", async () => {
-  const notes = { ...second, id: "notes", title: "Dorothy notes" };
+  const notes = { ...second, id: "notes", title: "Maple notes" };
   state.projects = [second, notes];
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   await act(() => openLibraryAction("new-conversation"));
-  expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
-  await type("Search projects", "dor");
+  expect(container.textContent).toContain("Maple · GPT 6.0 Astra · Full access");
+  await type("Search projects", "map");
   expect(button("Beta")).toBeUndefined();
-  expect(button("Dorothy notes")).toBeDefined();
+  expect(button("Maple notes")).toBeDefined();
 });
 
 it("offers an offline quick start using the host's files and grants", async () => {
@@ -876,12 +872,12 @@ it("offers an offline quick start using the host's files and grants", async () =
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   state.denied.add("registerThread:library");
   state.denied.add("registerCopy:library");
-  state.denied.add("prepareCopy:dorothy");
+  state.denied.add("prepareCopy:maple");
   await act(() => openLibraryAction("new-conversation"));
   expect(button("Beta").dataset.enter).toBe("Start");
   await click("Beta");
   expect(launch().autoStart).toMatchObject({
-    launch: { environmentId: "dorothy", workingCopyId: "beta-copy" },
+    launch: { environmentId: "maple", workingCopyId: "beta-copy" },
   });
 });
 

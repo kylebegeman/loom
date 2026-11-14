@@ -78,7 +78,7 @@ describe("workspace handoff computer destinations", () => {
         project(
           "other",
           pi,
-          repository("github.com/kylebegeman/atlas", "https://github.com/kylebegeman/atlas.git"),
+          repository("github.com/octocat/atlas", "https://github.com/octocat/atlas.git"),
         ),
         project("other-checkout", mini),
       ],
@@ -261,13 +261,13 @@ describe("workspace handoff computer destinations", () => {
 
   it("uses the accepted offer repository instead of stale source identity", () => {
     const result = groups({
-      offeredRepositoryKey: "github.com/kylebegeman/atlas",
+      offeredRepositoryKey: "github.com/octocat/atlas",
       projects: [
         project("loom"),
         project(
           "atlas",
           pi,
-          repository("github.com/kylebegeman/atlas", "https://github.com/kylebegeman/atlas.git"),
+          repository("github.com/octocat/atlas", "https://github.com/octocat/atlas.git"),
         ),
       ],
     });

@@ -46,7 +46,7 @@ const pageFor = (
   input: Pick<LibraryPagePublishRequest, "threadId" | "title" | "kind"> & { readonly id?: string },
 ): PreviewPage => ({
   id: input.id ?? "page-1",
-  url: `https://pages.bagels.top/p/${input.id ?? "page-1"}`,
+  url: `https://pages.example.net/p/${input.id ?? "page-1"}`,
   title: input.title,
   kind: input.kind,
   projectId,

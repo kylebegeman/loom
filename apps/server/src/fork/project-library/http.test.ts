@@ -465,7 +465,7 @@ describe("Library host HTTP publishing boundaries", () => {
           authorityEpoch: 1,
           computer: {
             environmentId: source,
-            label: "Dorothy",
+            label: "Maple",
             platform: { os: "darwin", arch: "arm64" },
             appVersion: "0.0.58",
             supportsExecution: true,

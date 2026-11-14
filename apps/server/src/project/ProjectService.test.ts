@@ -828,14 +828,14 @@ it.effect("rejects a macOS workspace another project names in another case or Un
       commandId: CommandId.make("command:spelled:holder"),
       projectId: ProjectId.make("project:spelled:holder"),
       title: "Holder",
-      workspaceRoot: "/Users/k/Projects/Café",
+      workspaceRoot: "/Users/me/Projects/Café",
     });
     const claim = yield* service
       .create({
         commandId: CommandId.make("command:spelled:claim"),
         projectId: ProjectId.make("project:spelled:claim"),
         title: "Claim",
-        workspaceRoot: "/Users/k/projects/café",
+        workspaceRoot: "/Users/me/projects/café",
       })
       .pipe(Effect.flip);
     assert.instanceOf(claim, ProjectService.ProjectConflictError);

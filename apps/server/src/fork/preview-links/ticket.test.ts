@@ -16,8 +16,8 @@ const pair = generatePreviewTicketKeyPair();
 const privateKey = previewTicketPrivateKey(pair.privateKey)!;
 const publicKey = previewTicketPublicKey(pair.publicKey)!;
 const keyId = previewTicketKeyId(pair.publicKey);
-const issuer = "https://loom.begam.in";
-const audience = previewTicketAudience("5173-abc123-dorothy.bagels.top");
+const issuer = "https://loom.example.com";
+const audience = previewTicketAudience("5173-abc123-maple.example.net");
 const nonce = randomPreviewNonce();
 const now = 1_800_000_000_000;
 

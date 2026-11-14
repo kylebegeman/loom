@@ -46,7 +46,7 @@ function status(overrides: Partial<LibraryPushStatus> = {}): LibraryPushStatus {
   return {
     state: "ready",
     reason: null,
-    key: { teamId: "23W93ZUURR", keyId: "ABCDE12345" },
+    key: { teamId: "TEAMID1234", keyId: "ABCDE12345" },
     devices: [],
     ...overrides,
   };
@@ -148,7 +148,7 @@ describe("libraryPushView", () => {
         tone: "warning",
         text: "On, but no iPhone is registered, so notifications reach no one.",
       },
-      key: "Apple key ABCDE12345, team 23W93ZUURR.",
+      key: "Apple key ABCDE12345, team TEAMID1234.",
       devices: [],
       empty: { tone: "warning" },
       error: null,
@@ -208,7 +208,7 @@ describe("libraryPushView", () => {
     expect(result).toMatchObject({
       status: "no-app",
       headline: { tone: "danger", text: NO_APP_TEXT },
-      key: "Apple key ABCDE12345, team 23W93ZUURR.",
+      key: "Apple key ABCDE12345, team TEAMID1234.",
       builds: null,
       empty: null,
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { PREVIEW_DEVICES, normalizePreviewPath, previewStageLayout } from "./SitePreview";
 
-const SITE = "https://pages.bagels.top";
+const SITE = "https://pages.example.net";
 
 describe("previewStageLayout", () => {
   it("scales a device down to the stage, never up", () => {
@@ -42,11 +42,11 @@ describe("normalizePreviewPath", () => {
   });
 
   it("strips the site's own host from a pasted address", () => {
-    expect(normalizePreviewPath("https://pages.bagels.top/docs", SITE)).toEqual({
+    expect(normalizePreviewPath("https://pages.example.net/docs", SITE)).toEqual({
       ok: true,
       path: "/docs",
     });
-    expect(normalizePreviewPath("Pages.Bagels.Top/docs?a=1", SITE)).toEqual({
+    expect(normalizePreviewPath("Pages.Example.Net/docs?a=1", SITE)).toEqual({
       ok: true,
       path: "/docs?a=1",
     });
@@ -55,7 +55,7 @@ describe("normalizePreviewPath", () => {
   it("returns the site's own address as no path", () => {
     expect(normalizePreviewPath("", SITE)).toEqual({ ok: true, path: undefined });
     expect(normalizePreviewPath("/", SITE)).toEqual({ ok: true, path: undefined });
-    expect(normalizePreviewPath("https://pages.bagels.top", SITE)).toEqual({
+    expect(normalizePreviewPath("https://pages.example.net", SITE)).toEqual({
       ok: true,
       path: undefined,
     });
@@ -71,12 +71,12 @@ describe("normalizePreviewPath", () => {
     for (const input of [
       "https://evil.example/x",
       "//evil.example/x",
-      "http://pages.bagels.top/x",
+      "http://pages.example.net/x",
       "javascript:alert(1)",
     ]) {
       expect(normalizePreviewPath(input, SITE)).toEqual({
         ok: false,
-        reason: "The preview stays on pages.bagels.top.",
+        reason: "The preview stays on pages.example.net.",
       });
     }
   });

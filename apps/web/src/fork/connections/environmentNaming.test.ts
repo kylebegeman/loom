@@ -41,17 +41,17 @@ const presentation = (label: string, capable = true): EnvironmentPresentation =>
 describe("web computer name projection", () => {
   it("updates an already paired client when a rename or reset arrives in live config", () => {
     const renamed = projectEnvironmentPresentation(environmentId, presentation("Fleet QA Mac"));
-    const reset = projectEnvironmentPresentation(environmentId, presentation("Dorothy"));
+    const reset = projectEnvironmentPresentation(environmentId, presentation("Maple"));
     expect(renamed.label).toBe("Fleet QA Mac");
-    expect(reset.label).toBe("Dorothy");
+    expect(reset.label).toBe("Maple");
     expect(reset.entry).toBe(renamed.entry);
     expect(reset.environmentId).toBe(renamed.environmentId);
     expect(reset.displayUrl).toBe(renamed.displayUrl);
     expect(Option.getOrThrow(reset.entry.profile)).toBe(Option.getOrThrow(renamed.entry.profile));
   });
   it("retains device aliases for hosts without canonical naming support", () => {
-    expect(
-      projectEnvironmentPresentation(environmentId, presentation("Dorothy", false)).label,
-    ).toBe("Fleet QA Mac");
+    expect(projectEnvironmentPresentation(environmentId, presentation("Maple", false)).label).toBe(
+      "Fleet QA Mac",
+    );
   });
 });

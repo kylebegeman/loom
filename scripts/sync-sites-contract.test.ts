@@ -21,7 +21,7 @@ it.layer(NodeServices.layer)("Sites contract sync", (it) => {
       yield* syncSitesContract({ source, rootDir, check: false });
       assert.equal(yield* fs.readFileString(destination), fixture);
       yield* syncSitesContract({ source, rootDir, check: true });
-      const staleFixture = fixture.replace('"begam.in"', '"Changed API"');
+      const staleFixture = fixture.replace('"example.com"', '"Changed API"');
       yield* fs.writeFileString(destination, staleFixture);
       const error = yield* syncSitesContract({ source, rootDir, check: true }).pipe(Effect.flip);
       assert.instanceOf(error, SitesContractDriftError);

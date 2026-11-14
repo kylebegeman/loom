@@ -45,8 +45,8 @@ function link(overrides: Partial<PreviewLink> = {}): PreviewLink {
     id: "link",
     kind: "port",
     port: 5173,
-    host: "5173-k3f9x2-dorothy.bagels.top",
-    url: "https://5173-k3f9x2-dorothy.bagels.top/",
+    host: "5173-k3f9x2-maple.example.net",
+    url: "https://5173-k3f9x2-maple.example.net/",
     createdBy: "owner",
     threadId: null,
     laneId: null,
@@ -67,9 +67,9 @@ function setup(overrides: {
   readonly gateway?: PreviewLinksSetup["gateway"];
 }): PreviewLinksSetup {
   const enabled = overrides.enabled ?? true;
-  const suffix = overrides.suffix === undefined ? "bagels.top" : overrides.suffix;
+  const suffix = overrides.suffix === undefined ? "example.net" : overrides.suffix;
   return {
-    settings: { enabled, suffix, machine: "dorothy", defaultLifetime: "12h", gatewayPort: 3779 },
+    settings: { enabled, suffix, machine: "maple", defaultLifetime: "12h", gatewayPort: 3779 },
     tokenStored: true,
     ready: enabled && suffix !== null,
     tunnel: overrides.tunnel ?? { state: "connected", message: null },
@@ -85,14 +85,14 @@ describe("previewComputers", () => {
       computer("off", "Paused", { entry: { enabled: false } }),
       computer("away", "Away", { connection: { phase: "reconnecting" } }),
       computer("upstream", "Upstream", { serverConfig: null }),
-      computer("a", "Dorothy"),
+      computer("a", "Maple"),
     ]);
-    expect(result.map((entry) => entry.label)).toEqual(["Dorothy", "Zelda"]);
+    expect(result.map((entry) => entry.label)).toEqual(["Maple", "Zelda"]);
   });
 
   it("notes which computers relay the pages they published", () => {
     const result = previewComputers([
-      computer("a", "Dorothy", { features: ["preview-links", "preview-pages"] }),
+      computer("a", "Maple", { features: ["preview-links", "preview-pages"] }),
       computer("b", "Zelda"),
     ]);
     expect(result.map((entry) => entry.pages)).toEqual([true, false]);
@@ -203,7 +203,7 @@ describe("connectionReachesLoopback", () => {
     expect(connectionReachesLoopback("http://127.0.0.1:3773")).toBe(true);
     expect(connectionReachesLoopback("http://[::1]:3773")).toBe(true);
     expect(connectionReachesLoopback("http://192.168.1.25:3773")).toBe(false);
-    expect(connectionReachesLoopback("https://dorothy.tail1dab34.ts.net:6949")).toBe(false);
+    expect(connectionReachesLoopback("https://maple.tail1234.ts.net:6949")).toBe(false);
     expect(connectionReachesLoopback("https://relay.example.com/env/abc")).toBe(false);
   });
 

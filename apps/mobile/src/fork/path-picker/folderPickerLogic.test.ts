@@ -4,8 +4,8 @@ import { folderPickerStart, hiddenFoldersLast, typedFolderFilter } from "./folde
 
 describe("folderPickerStart", () => {
   it("opens on the first candidate that names a folder on the computer", () => {
-    expect(folderPickerStart([null, "", "  ", "/Users/kyle/Projects"], "MacIntel")).toBe(
-      "/Users/kyle/Projects",
+    expect(folderPickerStart([null, "", "  ", "/Users/me/Projects"], "MacIntel")).toBe(
+      "/Users/me/Projects",
     );
     expect(folderPickerStart(["~/code", "/srv"], "Linux")).toBe("~/code");
   });
@@ -21,14 +21,14 @@ describe("folderPickerStart", () => {
 
 describe("typedFolderFilter", () => {
   it("filters the current folder by a typed name", () => {
-    expect(typedFolderFilter("/Users/kyle/", "Dev", "MacIntel")).toEqual({
-      folder: "/Users/kyle/",
+    expect(typedFolderFilter("/Users/me/", "Dev", "MacIntel")).toEqual({
+      folder: "/Users/me/",
       filter: "Dev",
     });
   });
 
   it("moves to the folder of a typed full path and filters by the rest", () => {
-    expect(typedFolderFilter("/Users/kyle/", "/opt/homebrew/b", "MacIntel")).toEqual({
+    expect(typedFolderFilter("/Users/me/", "/opt/homebrew/b", "MacIntel")).toEqual({
       folder: "/opt/homebrew/",
       filter: "b",
     });
@@ -40,15 +40,15 @@ describe("typedFolderFilter", () => {
   });
 
   it("moves through relative folders from the current one", () => {
-    expect(typedFolderFilter("/Users/kyle/", "Developer/lo", "MacIntel")).toEqual({
-      folder: "/Users/kyle/Developer/",
+    expect(typedFolderFilter("/Users/me/", "Developer/lo", "MacIntel")).toEqual({
+      folder: "/Users/me/Developer/",
       filter: "lo",
     });
-    expect(typedFolderFilter("/Users/kyle/Developer/", "../", "MacIntel")).toEqual({
-      folder: "/Users/kyle/",
+    expect(typedFolderFilter("/Users/me/Developer/", "../", "MacIntel")).toEqual({
+      folder: "/Users/me/",
       filter: "",
     });
-    expect(typedFolderFilter("/Users/kyle/", "./../../", "MacIntel")).toEqual({
+    expect(typedFolderFilter("/Users/me/", "./../../", "MacIntel")).toEqual({
       folder: "/",
       filter: "",
     });

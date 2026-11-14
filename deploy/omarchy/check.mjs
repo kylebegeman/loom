@@ -16,11 +16,6 @@ const tests = (await NodeFSP.readdir(root))
 NodeChildProcess.execFileSync(NodeProcess.execPath, ["--test", "--test-reporter=dot", ...tests], {
   stdio: "inherit",
 });
-NodeChildProcess.execFileSync(
-  NodeProcess.execPath,
-  [NodePath.join(root, "packets/render.mjs"), "--check"],
-  { stdio: "inherit" },
-);
 if (args.length) {
   const report = JSON.parse(
     NodeChildProcess.execFileSync(paths().bin, ["compatibility"], { encoding: "utf8" }),

@@ -11,7 +11,7 @@ const project = (environmentId: EnvironmentId, id: string, workspaceRoot = "/pro
   environmentId,
   id: ProjectId.make(id),
   workspaceRoot,
-  environmentLabel: "Dorothy",
+  environmentLabel: "Maple",
 });
 const choices = (
   projects: ReturnType<typeof project>[],
@@ -29,7 +29,7 @@ describe("Project home computer choices", () => {
   it("keeps a single computer label concise and carries its exact checkout key", () => {
     const item = project(mac, "root");
     expect(choices([item])).toEqual([
-      { value: projectHomeComputerChoiceKey(item), label: "Dorothy", triggerLabel: "Dorothy" },
+      { value: projectHomeComputerChoiceKey(item), label: "Maple", triggerLabel: "Maple" },
     ]);
   });
   it("disambiguates folders on one computer and repeated names on different computers", () => {
@@ -39,15 +39,15 @@ describe("Project home computer choices", () => {
       project(pi, "remote", "/ssd/repo"),
     ];
     expect(choices(projects).map((choice) => choice.label)).toEqual([
-      "Dorothy, /root",
-      "Dorothy, /feature",
-      "Dorothy, /ssd/repo",
+      "Maple, /root",
+      "Maple, /feature",
+      "Maple, /ssd/repo",
     ]);
   });
   it("qualifies identical names and paths with distinct computer identities", () => {
     const result = choices([project(mac, "root"), project(pi, "root")]);
-    expect(result[0]?.label).toBe("Dorothy, /project (computer-a)");
-    expect(result[1]?.label).toBe("Dorothy, /project (computer-b)");
+    expect(result[0]?.label).toBe("Maple, /project (computer-a)");
+    expect(result[1]?.label).toBe("Maple, /project (computer-b)");
     expect(result[0]?.value).not.toBe(result[1]?.value);
   });
   it("distinguishes duplicate checkout records when computer names and paths also collide", () => {
@@ -58,9 +58,9 @@ describe("Project home computer choices", () => {
     ];
     const result = choices(projects);
     expect(result.map((choice) => choice.label)).toEqual([
-      "Dorothy, /project (computer-a, checkout-a)",
-      "Dorothy, /project (computer-a, checkout-b)",
-      "Dorothy, /project (computer-b)",
+      "Maple, /project (computer-a, checkout-a)",
+      "Maple, /project (computer-a, checkout-b)",
+      "Maple, /project (computer-b)",
     ]);
     expect(new Set(result.map((choice) => choice.triggerLabel)).size).toBe(projects.length);
     expect(result.map((choice) => choice.value)).toEqual(
@@ -81,16 +81,16 @@ describe("Project home computer choices", () => {
   });
   it("uses the shortest distinct folder suffix for selected labels without losing full paths", () => {
     const result = choices([
-      project(mac, "root", "/Users/kyle/Developer/loom/main/"),
-      project(mac, "feature", "/Users/kyle/Developer/atlas/main"),
-      project(mac, "solo", "/Users/kyle/Developer/feature-review"),
+      project(mac, "root", "/Users/me/Developer/loom/main/"),
+      project(mac, "feature", "/Users/me/Developer/atlas/main"),
+      project(mac, "solo", "/Users/me/Developer/feature-review"),
     ]);
     expect(result.map((choice) => choice.triggerLabel)).toEqual([
-      "Dorothy, loom/main",
-      "Dorothy, atlas/main",
-      "Dorothy, feature-review",
+      "Maple, loom/main",
+      "Maple, atlas/main",
+      "Maple, feature-review",
     ]);
-    expect(result[0]?.label).toBe("Dorothy, /Users/kyle/Developer/loom/main/");
+    expect(result[0]?.label).toBe("Maple, /Users/me/Developer/loom/main/");
   });
 
   it("distinguishes same-directory records and supports Windows folder suffixes", () => {
@@ -99,8 +99,8 @@ describe("Project home computer choices", () => {
       project(mac, "checkout-b", "C:\\Developer\\loom"),
     ]);
     expect(result.map((choice) => choice.triggerLabel)).toEqual([
-      "Dorothy, loom (checkout-a)",
-      "Dorothy, loom (checkout-b)",
+      "Maple, loom (checkout-a)",
+      "Maple, loom (checkout-b)",
     ]);
   });
 });

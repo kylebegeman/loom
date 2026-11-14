@@ -237,6 +237,12 @@ check_brand_copy() {
 $unexpected"
 }
 
+# Personal infrastructure identifiers stay out of this public repository: every line the fork
+# adds over upstream is checked, with the private deny list when one is configured.
+check_personal_identifiers() {
+  node scripts/fork/personal-identifiers.ts --base "$(upstream_base)"
+}
+
 # The newest upstream release in HEAD's history, which the fork's changes are measured against.
 upstream_base() {
   local base
@@ -416,6 +422,7 @@ run_checks() {
   FAILED_CHECKS=""
   run_check "Checking that every fork seam survived" check_seams
   run_check "Checking for new T3 Code product text" check_brand_copy
+  run_check "Checking for personal identifiers" check_personal_identifiers
   local before=$FAILED_CHECKS built dirs d packages package
   run_check "Installing dependencies" pnpm install --frozen-lockfile
   if [ "$FAILED_CHECKS" = "$before" ]; then
@@ -1384,7 +1391,7 @@ run_agent() {
     --permission-mode "$mode" --allowedTools "$@"
 }
 
-# Switchboard keeps credentials on Dorothy; never export the personal key to CI.
+# Switchboard keeps credentials on its own host; never export the personal key to CI.
 run_codex_agent() (
   local sandbox=read-only reply
   [ "$1" != acceptEdits ] || sandbox=workspace-write

@@ -12,9 +12,9 @@
 # variable LOOM_AUTO_MERGE set to "true", a pull request that passed, and passed
 # review when it needed one, merges and main is tagged loom-<tag>. Anything else
 # waits for the next nightly, which continues it. loom-upstream-watch.yml alerts
-# Kyle when main falls behind anyway. Claude runs on Kyle's pooled accounts
-# through Switchboard on Dorothy, reached over the tailnet. See FORK.md,
-# "Updating from upstream".
+# the owner when main falls behind anyway. Claude runs on the owner's pooled accounts
+# through the Switchboard gateway named by the LOOM_SWITCHBOARD_URL repository
+# variable, reached over the tailnet. See FORK.md, "Updating from upstream".
 name: Loom upstream
 run-name: ${{ inputs.supervisor_request_id && format('Loom upstream {0} [{1}]', inputs.target, inputs.supervisor_request_id) || 'Loom upstream' }}
 
@@ -112,7 +112,8 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TARGET: ${{ inputs.target || 'nightly' }}
       DRY_RUN: ${{ inputs.dry_run || false }}
-      ANTHROPIC_BASE_URL: http://dorothy.tail1dab34.ts.net:8317
+      # The gateway's private tailnet origin, such as http://machine.tailnet.ts.net:8317.
+      ANTHROPIC_BASE_URL: ${{ vars.LOOM_SWITCHBOARD_URL }}
       # Telemetry and update checks would carry the gateway key to api.anthropic.com.
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     steps:
@@ -202,11 +203,15 @@ jobs:
         env:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.SWITCHBOARD_CI_KEY }}
         run: |
+          if [ -z "$ANTHROPIC_BASE_URL" ]; then
+            echo "::error::Set the LOOM_SWITCHBOARD_URL repository variable to the Switchboard gateway's tailnet origin."
+            exit 1
+          fi
           if ! curl -fsS -o /dev/null --retry 4 --retry-all-errors --retry-delay 3 --retry-max-time 120 --max-time 30 \
             -X POST "$ANTHROPIC_BASE_URL/v1/messages/count_tokens" \
             -H "authorization: Bearer $ANTHROPIC_AUTH_TOKEN" -H 'anthropic-version: 2023-06-01' -H 'content-type: application/json' \
             -d '{"model":"claude-opus-5-5","messages":[{"role":"user","content":"ping"}]}'; then
-            echo "::error::Switchboard at $ANTHROPIC_BASE_URL did not accept a token count, so Claude cannot run. Check the tailnet join above, SWITCHBOARD_CI_KEY and the gateway on Dorothy."
+            echo "::error::Switchboard at $ANTHROPIC_BASE_URL did not accept a token count, so Claude cannot run. Check the tailnet join above, SWITCHBOARD_CI_KEY and the gateway at LOOM_SWITCHBOARD_URL."
             exit 1
           fi
 

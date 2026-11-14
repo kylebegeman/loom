@@ -355,7 +355,7 @@ it("holds a launch PR link with Local environment disabled until discovery settl
 it("opens a web link on another computer once they connect, when this one runs no agents", async () => {
   setup();
   state.localEnvironmentDisabled = true;
-  state.scratchEnvironmentId = "dorothy";
+  state.scratchEnvironmentId = "maple";
   {
     await using _discarded = await mount("https://discarded.example.com/");
     expect(state.openScratchProject).not.toHaveBeenCalled();
@@ -374,7 +374,7 @@ it("opens a web link on another computer once they connect, when this one runs n
     await opened;
   });
   expect(state.openScratchProject).toHaveBeenCalledExactlyOnceWith(
-    "dorothy",
+    "maple",
     "Could not open the link",
   );
 });

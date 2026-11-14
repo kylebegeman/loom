@@ -23,7 +23,7 @@ export interface ThreadRecoveryComputer {
   readonly label: string;
   /** It refused an expired Identity sign-in, and this phone can sign in again. */
   readonly signIn: boolean;
-  /** "Can't reach Dorothy since 3:04 PM", once a reconnect has failed past the stall window. */
+  /** "Can't reach Maple since 3:04 PM", once a reconnect has failed past the stall window. */
   readonly stallTitle: string | null;
   /** What the Library's directory last heard from it. */
   readonly directoryHealth: string | null;

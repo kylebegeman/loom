@@ -17,7 +17,7 @@ import {
 import { generatePreviewTicketKeyPair } from "./ticket.ts";
 
 const key = new Uint8Array(32).fill(7);
-const host = "5173-abc123-dorothy.bagels.top";
+const host = "5173-abc123-maple.example.net";
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
@@ -54,7 +54,7 @@ describe("isPreviewPortDenied", () => {
 
 describe("previewMachineSlug", () => {
   it("keeps the first label's letters and digits", () => {
-    expect(previewMachineSlug("Dorothy.local")).toBe("dorothy");
+    expect(previewMachineSlug("Maple.local")).toBe("maple");
     expect(previewMachineSlug("kyle's-mac-mini")).toBe("kylesmacmini");
     expect(previewMachineSlug("---")).toBe("loom");
   });
@@ -109,7 +109,7 @@ describe("preview cookies", () => {
     );
     expect(verifyPreviewCookie(`${forged}.${signature}`, key, host, 0)).toBeNull();
     expect(verifyPreviewCookie(`${payload}.${signature}x`, key, host, 0)).toBeNull();
-    expect(verifyPreviewCookie(value, key, "3000-abc123-dorothy.bagels.top", 0)).toBeNull();
+    expect(verifyPreviewCookie(value, key, "3000-abc123-maple.example.net", 0)).toBeNull();
     expect(verifyPreviewCookie(value, new Uint8Array(32).fill(8), host, 0)).toBeNull();
     expect(verifyPreviewCookie(value, key, host, 1_000_000)).toBeNull();
     expect(verifyPreviewCookie("garbage", key, host, 0)).toBeNull();

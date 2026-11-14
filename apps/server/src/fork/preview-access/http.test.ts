@@ -39,8 +39,8 @@ import { PreviewAccessMigrations } from "./migrations.ts";
 import * as PreviewAccess from "./PreviewAccessService.ts";
 
 const LIBRARY_ORIGIN = "https://library.example.test";
-const COMPUTER = "loom-host:environment-dorothy";
-const HOST = "3000-abc123-dorothy.bagels.top";
+const COMPUTER = "loom-host:environment-maple";
+const HOST = "3000-abc123-maple.example.net";
 const AUTHORITY_ENV = {
   LOOM_LIBRARY_AUTHORITY: "true",
   LOOM_IDENTITY_REDIRECT_URI: `${LIBRARY_ORIGIN}/api/loom/identity/callback`,
@@ -193,7 +193,7 @@ describe("Library preview registration", () => {
   it.effect("upserts a computer's hosts, deletes them on null and returns the ticket key", () =>
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
-        const first = yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        const first = yield* f.register({ machine: "maple", suffix: "example.net" });
         expect(first.status).toBe(200);
         expect(first.headers.get("cache-control")).toBe("no-store");
         const access = yield* decodeAccess(yield* Effect.promise(() => first.json()));
@@ -204,12 +204,12 @@ describe("Library preview registration", () => {
         });
         expect(previewTicketPublicKey(access.publicKey)).not.toBeNull();
 
-        const second = yield* f.register({ machine: "nora", suffix: "bagels.top" });
+        const second = yield* f.register({ machine: "juniper", suffix: "example.net" });
         const again = yield* decodeAccess(yield* Effect.promise(() => second.json()));
         // The key is created once and reused, so computers never hold a stale public key.
         expect(again.keyId).toBe(access.keyId);
         expect(yield* f.hosts).toEqual([
-          { subject: COMPUTER, machine: "nora", suffix: "bagels.top" },
+          { subject: COMPUTER, machine: "juniper", suffix: "example.net" },
         ]);
 
         expect((yield* f.register(null)).status).toBe(200);
@@ -222,7 +222,7 @@ describe("Library preview registration", () => {
     run({ LOOM_LIBRARY_AUTHORITY: "true" }, (f) =>
       Effect.gen(function* () {
         // The origin a computer happened to reach the Library on is no issuer browsers share.
-        const response = yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        const response = yield* f.register({ machine: "maple", suffix: "example.net" });
         expect(response.status).toBe(404);
         expect(yield* Effect.promise(() => response.json())).toEqual({ reason: "not-authority" });
         expect(yield* f.hosts).toEqual([]);
@@ -242,7 +242,7 @@ describe("Library preview registration", () => {
       },
       (f) =>
         Effect.gen(function* () {
-          const response = yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+          const response = yield* f.register({ machine: "maple", suffix: "example.net" });
           const access = yield* decodeAccess(yield* Effect.promise(() => response.json()));
           expect(access.origin).toBe("https://library.example.test:8443");
           // A pages host with a port could never receive its ticket, so it is ignored.
@@ -267,7 +267,7 @@ describe("Library preview registration", () => {
   it.effect("is not offered by a server that is not the Library authority", () =>
     run({}, (f) =>
       Effect.gen(function* () {
-        const response = yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        const response = yield* f.register({ machine: "maple", suffix: "example.net" });
         expect(response.status).toBe(404);
         expect(yield* Effect.promise(() => response.json())).toEqual({ reason: "not-authority" });
         expect((yield* f.ticket({ host: HOST, nonce: randomPreviewNonce() })).status).toBe(404);
@@ -278,20 +278,20 @@ describe("Library preview registration", () => {
   it.effect("refuses sessions that do not speak for the computer they name", () =>
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
-        const previews = { machine: "dorothy", suffix: "bagels.top" };
+        const previews = { machine: "maple", suffix: "example.net" };
         // An operator token is shared by computers, so it has to say which one is registering.
         yield* Ref.set(f.caller, operator);
         expect((yield* f.register(previews)).status).toBe(403);
         yield* Ref.set(f.caller, sessionFor("mcp-client", [AuthLibraryPublishScope]));
-        expect((yield* f.register(previews, "environment-dorothy")).status).toBe(403);
+        expect((yield* f.register(previews, "environment-maple")).status).toBe(403);
         yield* Ref.set(f.caller, sessionFor("viewer", [AuthOrchestrationReadScope]));
-        expect((yield* f.register(previews, "environment-dorothy")).status).toBe(403);
+        expect((yield* f.register(previews, "environment-maple")).status).toBe(403);
         yield* Ref.set(f.caller, sessionFor(COMPUTER, [AuthLibraryPublishScope]));
-        expect((yield* f.register(previews, "environment-nora")).status).toBe(403);
-        expect((yield* f.register({ machine: "Dorothy!", suffix: "bagels.top" })).status).toBe(400);
+        expect((yield* f.register(previews, "environment-juniper")).status).toBe(403);
+        expect((yield* f.register({ machine: "Maple!", suffix: "example.net" })).status).toBe(400);
         expect(yield* f.hosts).toEqual([]);
         // A computer's own session may still name itself.
-        expect((yield* f.register(previews, "environment-dorothy")).status).toBe(200);
+        expect((yield* f.register(previews, "environment-maple")).status).toBe(200);
         expect(yield* f.hosts).toEqual([{ subject: COMPUTER, ...previews }]);
       }),
     ),
@@ -302,12 +302,12 @@ describe("Library preview registration", () => {
       Effect.gen(function* () {
         yield* Ref.set(f.caller, operator);
         const response = yield* f.register(
-          { machine: "nora", suffix: "bagels.top" },
-          "environment-nora",
+          { machine: "juniper", suffix: "example.net" },
+          "environment-juniper",
         );
         expect(response.status).toBe(200);
         expect(yield* f.hosts).toEqual([
-          { subject: "loom-host:environment-nora", machine: "nora", suffix: "bagels.top" },
+          { subject: "loom-host:environment-juniper", machine: "juniper", suffix: "example.net" },
         ]);
       }),
     ),
@@ -349,7 +349,7 @@ describe("Library preview tickets", () => {
   it.effect("never redirects a signed-in browser anywhere but a registered host", () =>
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
-        yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        yield* f.register({ machine: "maple", suffix: "example.net" });
         yield* Ref.set(f.browser, operator);
         const nonce = randomPreviewNonce();
         for (const host of [
@@ -372,7 +372,7 @@ describe("Library preview tickets", () => {
   it.effect("refuses a bad nonce, an unregistered host and a session that cannot run work", () =>
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
-        yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        yield* f.register({ machine: "maple", suffix: "example.net" });
         yield* Ref.set(f.browser, operator);
         const badNonce = yield* f.ticket({ host: HOST, nonce: "short" });
         expect(badNonce.status).toBe(400);
@@ -380,7 +380,7 @@ describe("Library preview tickets", () => {
         expect(badNonce.headers.get("content-security-policy")).toContain("default-src 'none'");
         expect(badNonce.headers.get("location")).toBeNull();
         const nonce = randomPreviewNonce();
-        for (const host of ["3000-abc123-nora.bagels.top", "evil.example", "bagels.top"])
+        for (const host of ["3000-abc123-juniper.example.net", "evil.example", "example.net"])
           expect((yield* f.ticket({ host, nonce })).status).toBe(400);
         yield* Ref.set(f.browser, sessionFor("viewer", [AuthOrchestrationReadScope]));
         expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(403);
@@ -392,7 +392,7 @@ describe("Library preview tickets", () => {
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
         const computer = sessionFor(COMPUTER, [AuthLibraryPublishScope]);
-        yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        yield* f.register({ machine: "maple", suffix: "example.net" });
         yield* Ref.set(f.browser, operator);
         const nonce = randomPreviewNonce();
         expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(303);
@@ -407,10 +407,10 @@ describe("Library preview tickets", () => {
 
         // Enrolled again, it registers under its new session and signs in again.
         yield* Ref.set(f.caller, { ...computer, sessionId: AuthSessionId.make("session-again") });
-        yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        yield* f.register({ machine: "maple", suffix: "example.net" });
         expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(303);
         expect(yield* f.hosts).toEqual([
-          { subject: COMPUTER, machine: "dorothy", suffix: "bagels.top" },
+          { subject: COMPUTER, machine: "maple", suffix: "example.net" },
         ]);
       }),
     ),
@@ -420,7 +420,7 @@ describe("Library preview tickets", () => {
   it.live("signs a ticket the preview host verifies for its own host and nonce", () =>
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
-        const registered = yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        const registered = yield* f.register({ machine: "maple", suffix: "example.net" });
         const access = yield* decodeAccess(yield* Effect.promise(() => registered.json()));
         yield* Ref.set(f.browser, operator);
         for (const host of [HOST.toUpperCase(), "pages.example.test"]) {
@@ -450,7 +450,7 @@ describe("Library preview tickets", () => {
           expect(
             verifyPreviewTicket(token, {
               ...expected,
-              audience: previewTicketAudience("3000-zzz999-dorothy.bagels.top"),
+              audience: previewTicketAudience("3000-zzz999-maple.example.net"),
             }),
           ).toBeNull();
         }

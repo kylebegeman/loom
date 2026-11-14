@@ -314,14 +314,14 @@ describe("tailscale", () => {
     const spawner = ChildProcessSpawner.make((command) => {
       const { command: executable } = command as unknown as { readonly command: string };
       spawned.push(executable);
-      return executable === "/Users/kyle/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+      return executable === "/Users/me/Applications/Tailscale.app/Contents/MacOS/Tailscale"
         ? Effect.succeed(mockHandle({ stdout: tailscaleStatusJson }))
         : Effect.fail(lookupFailure(executable === "tailscale" ? "EACCES" : "ENOENT"));
     });
     const layer = Layer.mergeAll(
       Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Layer.succeed(HostProcess.Platform, "darwin"),
-      Layer.succeed(HostProcess.HomeDirectory, "/Users/kyle"),
+      Layer.succeed(HostProcess.HomeDirectory, "/Users/me"),
     );
 
     return Effect.gen(function* () {
@@ -330,14 +330,11 @@ describe("tailscale", () => {
       assert.deepEqual(spawned, [
         "tailscale",
         "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-        "/Users/kyle/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+        "/Users/me/Applications/Tailscale.app/Contents/MacOS/Tailscale",
       ]);
       yield* readTailscaleStatus;
       assert.equal(spawned.length, 4, "the resolved CLI is reused");
-      assert.equal(
-        spawned.at(-1),
-        "/Users/kyle/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-      );
+      assert.equal(spawned.at(-1), "/Users/me/Applications/Tailscale.app/Contents/MacOS/Tailscale");
     }).pipe(Effect.provide(layer));
   });
 
@@ -358,7 +355,7 @@ describe("tailscale", () => {
         ),
       ),
       Layer.succeed(HostProcess.Platform, "darwin"),
-      Layer.succeed(HostProcess.HomeDirectory, "/Users/kyle"),
+      Layer.succeed(HostProcess.HomeDirectory, "/Users/me"),
     );
 
     return Effect.gen(function* () {
@@ -370,7 +367,7 @@ describe("tailscale", () => {
           : [],
         ["tailscale", "/Applications/Tailscale.app", "~/Applications/Tailscale.app"],
       );
-      assertCarriesNoSecret(error, "/Users/kyle");
+      assertCarriesNoSecret(error, "/Users/me");
     });
   });
 

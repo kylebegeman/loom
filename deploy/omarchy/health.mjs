@@ -90,7 +90,7 @@ export async function collectConnections(
           "Shared AI limits",
           "error",
           `The cached status endpoint returned HTTP ${response.status}.`,
-          "Check Tailscale and Dorothy's private dashboard.",
+          "Check Tailscale and the hub's private dashboard.",
         );
       }
       const status = await response.json(),
@@ -109,7 +109,7 @@ export async function collectConnections(
           : "The cached status is stale or invalid; its limits should not be trusted.",
         valid
           ? null
-          : "Open Switchboard and inspect the controller on Dorothy. Local checks do not refresh provider usage.",
+          : "Open Switchboard and inspect the controller on the hub. Local checks do not refresh provider usage.",
       );
     } catch {
       endpoints.switchboard = "unreachable";
@@ -118,7 +118,7 @@ export async function collectConnections(
         "Shared AI limits",
         "error",
         "The cached status endpoint is unreachable or unreadable.",
-        "Check Tailscale and Dorothy's private dashboard, then retry.",
+        "Check Tailscale and the hub's private dashboard, then retry.",
       );
     }
   };

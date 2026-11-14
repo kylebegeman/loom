@@ -14,22 +14,20 @@ const config = (label: string) =>
 
 it.effect("publishes rename and reset using snapshots existing clients understand", () =>
   Effect.gen(function* () {
-    const current = yield* Ref.make(config("Dorothy"));
-    const changes = Stream.make("Dorothy", "Rack Mac", "Rack Mac", "Dorothy").pipe(
+    const current = yield* Ref.make(config("Maple"));
+    const changes = Stream.make("Maple", "Rack Mac", "Rack Mac", "Maple").pipe(
       Stream.tap((label) => Ref.set(current, config(label))),
       Stream.map((label) => ({
-        name: label === "Dorothy" ? null : label,
+        name: label === "Maple" ? null : label,
         label,
-        defaultLabel: "Dorothy",
+        defaultLabel: "Maple",
       })),
     );
-    const updates = yield* computerNameConfigUpdates(config("Dorothy"), () =>
-      Ref.get(current),
-    ).pipe(
+    const updates = yield* computerNameConfigUpdates(config("Maple"), () => Ref.get(current)).pipe(
       Effect.provideService(
         ComputerNaming.ComputerNaming,
         ComputerNaming.ComputerNaming.of({
-          current: Effect.succeed({ name: null, label: "Dorothy", defaultLabel: "Dorothy" }),
+          current: Effect.succeed({ name: null, label: "Maple", defaultLabel: "Maple" }),
           changes,
           rename: () => Effect.die("unused"),
         }),
@@ -38,7 +36,7 @@ it.effect("publishes rename and reset using snapshots existing clients understan
     const snapshots = yield* Stream.runCollect(updates);
     expect(snapshots.map((snapshot) => snapshot.config.environment.label)).toEqual([
       "Rack Mac",
-      "Dorothy",
+      "Maple",
     ]);
     expect(
       snapshots.every((snapshot) => snapshot.type === "snapshot" && snapshot.version === 1),
@@ -49,8 +47,8 @@ it.effect("publishes rename and reset using snapshots existing clients understan
 
 it.effect("catches a rename between initial config acquisition and subscription", () =>
   Effect.gen(function* () {
-    const renamed = { name: "Orange Pi", label: "Orange Pi", defaultLabel: "Dorothy" };
-    const updates = yield* computerNameConfigUpdates(config("Dorothy"), () =>
+    const renamed = { name: "Orange Pi", label: "Orange Pi", defaultLabel: "Maple" };
+    const updates = yield* computerNameConfigUpdates(config("Maple"), () =>
       Effect.succeed(config(renamed.label)),
     ).pipe(
       Effect.provideService(

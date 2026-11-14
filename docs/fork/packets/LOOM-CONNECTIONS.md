@@ -11,7 +11,7 @@ iPhone.
 Connect is the stock way to use T3 Code on a phone. Loom's builds use T3's hosted relay
 (`relay.t3.codes`) and T3's Clerk account, so the computer list and every phone sign-in go
 through a third party. Loom already has the pieces to own this: Identity (Pocket ID at
-`id.loom.begam.in`), the Library directory where each computer reports a signed descriptor with
+`id.loom.example.com`), the Library directory where each computer reports a signed descriptor with
 its routes, and Cloudflare tunnels on Kyle's own account for preview links.
 
 What Connect provides today, and what replaces each part:
@@ -72,9 +72,9 @@ APNs refuses for Loom's own app ID.
 
 - **Route domain (2026-10-24).** Computer hostnames are `<computer>-loom.<zone>`, one level
   under the zone so Cloudflare's free Universal SSL certificate covers them. The zone was
-  `begam.in`; C03 makes it a required setting, `LOOM_REACH_ZONE`, with no default, because a
-  token with DNS edit rights on `begam.in` could repoint `id.loom.begam.in`. A dedicated zone,
-  ideally in its own Cloudflare account, is the recommended default pending Kyle. `bagels.top`
+  `example.com`; C03 makes it a required setting, `LOOM_REACH_ZONE`, with no default, because a
+  token with DNS edit rights on `example.com` could repoint `id.loom.example.com`. A dedicated zone,
+  ideally in its own Cloudflare account, is the recommended default pending Kyle. `example.net`
   stays reserved for preview pages.
 - **Telemetry (2026-10-24).** Loom builds send no product telemetry to T3; it stays available
   through `T3CODE_TELEMETRY_ENABLED=true`. Product analytics default off already
@@ -118,11 +118,10 @@ APNs refuses for Loom's own app ID.
 - **C01 rollout (2026-10-24).** Renewal starts only on a computer that sets
   `LOOM_IDENTITY_MAX_SESSION_AGE`, and clients older than C01 cannot sign in once it is set, so
   update the desktop and iPhone apps first, then raise the native client's refresh lifetime,
-  then set `7d` on the Library and each computer. The Library runs 0.0.119 since 2026-10-24
-  (loom-platform pin `08094b9`). The native refresh change is on loom-platform branch
-  `identity/native-refresh-7d` and waits for the admin-key apply. C02 pins directory computers
-  to the Library's issuer. Since C03, every sign-in also refuses a computer whose metadata names
-  another computer's per-computer resource, by a stateless rule with no saved pin (see
+  then set `7d` on the Library and each computer. The Library runs 0.0.119 since 2026-10-24.
+  The native refresh change lives in the private platform repository and waits for the
+  admin-key apply. C02 pins directory computers to the Library's issuer. Since C03, every
+  sign-in also refuses a computer whose metadata names another computer's per-computer resource, by a stateless rule with no saved pin (see
   [environment-auth](../../internals/environment-auth.md)). In the browser, the computer's own
   login page picks the provider, so both checks stop only a computer that reports honestly;
   browsers keep no refresh grant.
@@ -153,7 +152,7 @@ Found while researching the Cloudflare and Pocket ID APIs; each one changes the 
   means the resource exists and is found by search. Each authorization carries exactly one
   resource.
 - Native renewal needs the `loom-library-native` client's refresh lifetime raised from 60
-  minutes to 7 days (10080) through the identity reconciler in loom-platform.
+  minutes to 7 days (10080) through the private platform repository's identity reconciler.
 - Access step two needs a live test before any build work: Managed OAuth is Cloudflare's only
   per-user native flow, and the test must cover WebSocket upgrades, its header against Loom's
   `Authorization`, a 720 hour grant and one app reused across the wildcard hostnames.

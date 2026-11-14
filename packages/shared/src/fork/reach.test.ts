@@ -43,7 +43,7 @@ import {
 const NOW = 1_792_281_600;
 const LIBRARY_URL = "https://library.example.com";
 const ENVIRONMENT_ID = "4f1c2b9e-7d3a-4c5e-9b8f-1a2b3c4d5e6f";
-const ZONE = "begam.in";
+const ZONE = "example.org";
 
 function generateKeyPair() {
   const pair = NodeCrypto.generateKeyPairSync("ed25519", {
@@ -352,7 +352,7 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       "/api/assets/t%5Cmcp",
       "/api/assets/t%00.png",
       "/api/assets/t/%zz",
-      "http://studio-loom.begam.in/mcp",
+      "http://studio-loom.example.org/mcp",
       "*",
     ]) {
       expect(isUnsafeReachPath(path)).toBe(true);
@@ -407,12 +407,12 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
     for (const zone of [
       "",
       "in",
-      "Begam.in",
-      'begam.in" or true or "',
-      "begam.in.",
+      "Example.org",
+      'example.org" or true or "',
+      "example.org.",
       "127.0.0.1",
-      "begam.in:443",
-      "begam.in/x",
+      "example.org:443",
+      "example.org/x",
     ]) {
       expect(isReachZone(zone)).toBe(false);
       expect(renderReachWafExpression(zone)).toBeNull();
@@ -434,10 +434,10 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
   });
 
   it("builds the tunnel ingress with a 404 catch-all and no origin overrides", () => {
-    expect(reachIngressConfiguration("studio-loom.begam.in", "http://127.0.0.1:3773")).toEqual({
+    expect(reachIngressConfiguration("studio-loom.example.org", "http://127.0.0.1:3773")).toEqual({
       config: {
         ingress: [
-          { hostname: "studio-loom.begam.in", service: "http://127.0.0.1:3773" },
+          { hostname: "studio-loom.example.org", service: "http://127.0.0.1:3773" },
           { service: "http_status:404" },
         ],
       },
@@ -466,19 +466,19 @@ it.layer(PlatformCrypto.layer)("reach hostnames", (it) => {
   });
 
   it("numbers collisions from 2 to 99 and holds reserved names back to attempt 2", () => {
-    expect(reachHostname("studio", 1, ZONE)).toBe("studio-loom.begam.in");
-    expect(reachHostname("studio", 2, ZONE)).toBe("studio-2-loom.begam.in");
-    expect(reachHostname("studio", 99, ZONE)).toBe("studio-99-loom.begam.in");
+    expect(reachHostname("studio", 1, ZONE)).toBe("studio-loom.example.org");
+    expect(reachHostname("studio", 2, ZONE)).toBe("studio-2-loom.example.org");
+    expect(reachHostname("studio", 99, ZONE)).toBe("studio-99-loom.example.org");
     for (const attempt of [0, 100, 1.5, Number.NaN]) {
       expect(reachHostname("studio", attempt, ZONE)).toBeNull();
     }
     for (const slug of REACH_RESERVED_SLUGS) {
       expect(reachHostname(slug, 1, ZONE)).toBeNull();
-      expect(reachHostname(slug, 2, ZONE)).toBe(`${slug}-2-loom.begam.in`);
+      expect(reachHostname(slug, 2, ZONE)).toBe(`${slug}-2-loom.example.org`);
     }
     expect(reachHostname("xn--studio", 1, ZONE)).toBeNull();
     expect(reachHostname("Studio", 1, ZONE)).toBeNull();
-    expect(reachHostname("studio", 1, "Begam.in")).toBeNull();
+    expect(reachHostname("studio", 1, "Example.org")).toBeNull();
   });
 
   it("only ever produces hostnames that pass the directory route rule", () => {
@@ -496,21 +496,21 @@ it.layer(PlatformCrypto.layer)("reach hostnames", (it) => {
   });
 
   it("recognizes only the hostnames a Library assigns, so the guard never takes another host", () => {
-    expect(isReachHostname("studio-1-loom.begam.in")).toBe(true);
+    expect(isReachHostname("studio-1-loom.example.org")).toBe(true);
     for (const hostname of [
       "studio.tail1234.ts.net",
-      "loom.begam.in",
+      "loom.example.org",
       "studio-loom",
-      "-loom.begam.in",
-      "loom-loom.begam.in",
-      "studio-loom.begam.in.",
-      "Studio-loom.begam.in",
-      "studio--loom.begam.in",
+      "-loom.example.org",
+      "loom-loom.example.org",
+      "studio-loom.example.org.",
+      "Studio-loom.example.org",
+      "studio--loom.example.org",
       "studio-loom.localhost",
       "studio-loom.127.0.0.1",
       // The guard compares Host without its port, so it would never match these.
-      "studio-loom.begam.in:443",
-      "studio-loom.begam.in/x",
+      "studio-loom.example.org:443",
+      "studio-loom.example.org/x",
       "",
     ]) {
       expect(isReachHostname(hostname), hostname).toBe(false);
@@ -518,16 +518,16 @@ it.layer(PlatformCrypto.layer)("reach hostnames", (it) => {
   });
 
   it("derives the Identity resource from the Library origin, lowercase with no trailing slash", () => {
-    expect(reachResource("https://Loom.Begam.IN/", ENVIRONMENT_ID)).toBe(
-      `https://loom.begam.in/computers/${ENVIRONMENT_ID}`,
+    expect(reachResource("https://Loom.Example.ORG/", ENVIRONMENT_ID)).toBe(
+      `https://loom.example.org/computers/${ENVIRONMENT_ID}`,
     );
-    expect(reachResource("https://loom.begam.in/api/loom/identity/callback", "env-1")).toBe(
-      "https://loom.begam.in/computers/env-1",
+    expect(reachResource("https://loom.example.org/api/loom/identity/callback", "env-1")).toBe(
+      "https://loom.example.org/computers/env-1",
     );
-    expect(reachResource("https://loom.begam.in:8443", "env-1")).toBe(
-      "https://loom.begam.in:8443/computers/env-1",
+    expect(reachResource("https://loom.example.org:8443", "env-1")).toBe(
+      "https://loom.example.org:8443/computers/env-1",
     );
-    expect(reachResource("http://loom.begam.in", "env-1")).toBeNull();
+    expect(reachResource("http://loom.example.org", "env-1")).toBeNull();
     expect(reachResource("not a url", "env-1")).toBeNull();
     // Folding case would let one computer's id collide with another's.
     expect(reachResource(LIBRARY_URL, "Env-1")).toBeNull();

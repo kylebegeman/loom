@@ -319,6 +319,7 @@ source "$LOOM_TEST_SCRIPT"
 cd "$LOOM_TEST_ROOT"
 export PATH="$LOOM_TEST_BIN:$PATH"
 check_seams() { printf 'seams\\n' >> "$LOOM_TEST_LOG"; }
+check_personal_identifiers() { printf 'personal-identifiers\\n' >> "$LOOM_TEST_LOG"; }
 fork_tests() {
   printf '%s\\n' apps/mobile/src/lib/navigation.test.ts apps/web/src/fork/example.test.ts \\
     apps/web/src/fork/other.test.ts
@@ -436,6 +437,7 @@ it("runs lint after installation, then builds, boots and typechecks, and the tes
   expect(result.status).toBe(0);
   expect(lintCalls(f)).toEqual([
     ["seams"],
+    ["personal-identifiers"],
     ["install", "--frozen-lockfile"],
     [
       "exec",
@@ -516,6 +518,7 @@ it("runs every check after formatting, unused-code and lint failures and reports
   ]);
   expect(lintCalls(f).map(([first, second]) => second ?? first)).toEqual([
     "seams",
+    "personal-identifiers",
     "--frozen-lockfile",
     "vp",
     "knip:check",
@@ -592,7 +595,12 @@ it("skips every later check when installing dependencies fails", () => {
       .split("\n")
       .filter((line) => line.startsWith("loom: ")),
   ).toEqual(["loom: check failed: Installing dependencies"]);
-  expect(lintCalls(f)).toEqual([["seams"], ["install", "--frozen-lockfile"], ["restore-lockfile"]]);
+  expect(lintCalls(f)).toEqual([
+    ["seams"],
+    ["personal-identifiers"],
+    ["install", "--frozen-lockfile"],
+    ["restore-lockfile"],
+  ]);
 });
 
 it("fails instead of skipping typechecks and tests it cannot list", () => {
@@ -995,7 +1003,7 @@ it("does not treat helper processes or a different installation as the desktop a
   expect(
     runningAppState([
       { bundleURL: null },
-      { bundleURL: { path: "/Users/kyle/other/Loom.app" } },
+      { bundleURL: { path: "/Users/me/other/Loom.app" } },
       { bundleURL: { path: "/Applications/Loom.app.old" } },
     ]),
   ).toBe("stopped");

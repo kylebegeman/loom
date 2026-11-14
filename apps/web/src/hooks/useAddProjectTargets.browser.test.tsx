@@ -35,7 +35,7 @@ const computer = (id: string, supportsExecution: boolean) => ({
   },
 });
 const project = {
-  environmentId: EnvironmentId.make("dorothy"),
+  environmentId: EnvironmentId.make("maple"),
   id: ProjectId.make("project"),
   repositoryIdentity: { locator: { remoteUrl: "https://github.com/example/harbor.git" } },
 } as unknown as EnvironmentProject;
@@ -48,7 +48,7 @@ function Targets() {
 describe("useAddProjectTargets", () => {
   it("offers only computers that run work, never a Library", async () => {
     environments.setup([
-      computer("dorothy", true),
+      computer("maple", true),
       computer("remote", true),
       computer("library", false),
     ]);

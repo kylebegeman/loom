@@ -169,6 +169,7 @@ function fixture(
           HostProcess.Environment,
           options.env ?? {
             LOOM_IDENTITY_ISSUER: "https://id.example.test",
+            LOOM_SITES_API_ORIGIN: "https://api.example.test",
             LOOM_SITES_CLIENT_ID: "reader",
             LOOM_SITES_CLIENT_SECRET: "private-client-secret",
             ...(options.manager
@@ -289,6 +290,7 @@ it.effect("blank manager secrets leave site management unavailable", () => {
   const f = fixture({
     env: {
       LOOM_IDENTITY_ISSUER: "https://id.example.test",
+      LOOM_SITES_API_ORIGIN: "https://api.example.test",
       LOOM_SITES_CLIENT_ID: "reader",
       LOOM_SITES_CLIENT_SECRET: "reader-secret",
       LOOM_SITES_MANAGER_CLIENT_ID: "manager",
@@ -308,6 +310,18 @@ it.effect.each([
     {
       env: {
         LOOM_IDENTITY_ISSUER: "http://id.example.test",
+        LOOM_SITES_API_ORIGIN: "https://api.example.test",
+        LOOM_SITES_CLIENT_ID: "reader",
+        LOOM_SITES_CLIENT_SECRET: "secret",
+      },
+    },
+    "configuration",
+  ],
+  [
+    "missing API origin",
+    {
+      env: {
+        LOOM_IDENTITY_ISSUER: "https://id.example.test",
         LOOM_SITES_CLIENT_ID: "reader",
         LOOM_SITES_CLIENT_SECRET: "secret",
       },
@@ -374,9 +388,9 @@ it.effect(
       });
       yield* service.runChecks();
       expect(f.requests.filter((r) => r.method === "PUT").map((r) => r.url)).toEqual([
-        "https://api.begam.in/v1/integrations/sites/portfolio",
-        "https://api.begam.in/v1/integrations/sites/services/api",
-        "https://api.begam.in/v1/integrations/sites/checks/health",
+        "https://api.example.test/v1/integrations/sites/portfolio",
+        "https://api.example.test/v1/integrations/sites/services/api",
+        "https://api.example.test/v1/integrations/sites/checks/health",
       ]);
       expect(f.requests.filter((r) => r.url.endsWith("/checks/run"))).toHaveLength(1);
       expect(f.requests.filter((r) => r.url.endsWith("/token"))).toHaveLength(2);

@@ -3,7 +3,7 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { libraryCopiesForScope, libraryCopyReadiness } from "./library-copy-choice.ts";
 
-const host = EnvironmentId.make("dorothy");
+const host = EnvironmentId.make("maple");
 const other = EnvironmentId.make("mini");
 const project: LibraryProject = {
   id: "loom",

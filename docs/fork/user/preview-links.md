@@ -4,7 +4,7 @@ A preview link opens something running on one of your computers from any device,
 HTTPS address on your own domain:
 
 ```
-https://5173-k3f9x2-dorothy.example.com/
+https://5173-k3f9x2-maple.example.com/
 ```
 
 The address names the port (`5173`), a random part that is new for every link, and the

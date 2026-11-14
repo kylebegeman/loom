@@ -31,7 +31,7 @@ export interface PreviewGatewayView {
 }
 
 export interface PreviewLibraryAccess {
-  /** Such as `https://loom.begam.in`, with no trailing slash. */
+  /** Such as `https://loom.example.com`, with no trailing slash. */
   readonly origin: string;
   /** Starts with a single `/`, with no query or fragment. */
   readonly ticketPath: string;

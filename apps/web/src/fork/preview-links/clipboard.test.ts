@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { writePendingLinkToClipboard } from "./clipboard";
 
-const LINK = "https://5797-k3f9x2-dorothy.bagels.top/";
+const LINK = "https://5797-k3f9x2-maple.example.net/";
 
 class FakeClipboardItem {
   constructor(readonly data: Record<string, Promise<Blob>>) {}
@@ -54,7 +54,7 @@ describe("writePendingLinkToClipboard", () => {
 
   it("rejects with the link's own failure and writes nothing", async () => {
     const clipboard = stubClipboard(readItems);
-    const failure = new Error("Preview links are not set up on Dorothy.");
+    const failure = new Error("Preview links are not set up on Maple.");
 
     await expect(writePendingLinkToClipboard(Promise.reject(failure))).rejects.toBe(failure);
     expect(clipboard.writeText).not.toHaveBeenCalled();

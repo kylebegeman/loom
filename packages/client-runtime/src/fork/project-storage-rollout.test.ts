@@ -276,7 +276,7 @@ describe("reviewed project storage rollout", () => {
     await controller.review();
     controller.choose(projectStorageRolloutKey(folder), "keep");
     const plan = controller.confirm()!;
-    controller.syncTargets([{ ...folder, projectName: "Renamed", environmentLabel: "Dorothy" }]);
+    controller.syncTargets([{ ...folder, projectName: "Renamed", environmentLabel: "Maple" }]);
     expect(controller.getSnapshot().confirmation).toBe(plan);
     expect(rows()[0]!.choice).toBe("keep");
     controller.syncTargets([{ ...folder, workspaceRoot: "/replacement" }]);
@@ -471,11 +471,11 @@ describe("reviewed storage computer labels", () => {
     const mac = EnvironmentId.make("abcdefgh-mac"),
       pi = EnvironmentId.make("abcdefgh-pi");
     const labels = new Map([
-      [mac, "Dorothy"],
+      [mac, "Maple"],
       [pi, "Pi"],
     ]);
     expect(projectStorageRolloutComputerLabels(labels)).toEqual(labels);
-    expect([...labels.values()]).toEqual(["Dorothy", "Pi"]);
+    expect([...labels.values()]).toEqual(["Maple", "Pi"]);
   });
 
   it("qualifies duplicate names with the shortest distinct environment prefix of at least eight characters", () => {

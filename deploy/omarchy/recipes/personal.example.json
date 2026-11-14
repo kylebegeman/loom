@@ -49,7 +49,7 @@
     }
   },
   "apps": {
-    "office": "https://office.begam.in",
+    "office": "https://YOUR-PRIVATE-OFFICE-ORIGIN",
     "atlas": "https://YOUR-PRIVATE-ATLAS-ORIGIN"
   },
   "switchboard": {

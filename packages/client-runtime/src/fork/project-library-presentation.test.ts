@@ -4,8 +4,8 @@ import { createProjectLibraryPresentation } from "./project-library-presentation
 const mac = EnvironmentId.make("mac");
 const pi = EnvironmentId.make("pi");
 const names = new Map([
-  [mac, "Dorothy"],
-  [pi, "Dorothy"],
+  [mac, "Maple"],
+  [pi, "Maple"],
 ]);
 const entry = {
   threadCount: 70,
@@ -50,7 +50,7 @@ describe("Project library summaries", () => {
     );
     expect(result.status).toEqual({ kind: "offline", label: "Offline" });
     expect(result.metadata).toBe("Offline · 70 saved threads");
-    expect(result.accessibilitySummary).toContain("Dorothy (offline)");
+    expect(result.accessibilitySummary).toContain("Maple (offline)");
     expect(result.accessibilitySummary).toContain("Last known activity:");
     expect(result.accessibilitySummary).toContain("70 last known on offline computers");
   });

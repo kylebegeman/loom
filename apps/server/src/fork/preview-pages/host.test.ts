@@ -388,7 +388,7 @@ describe("pages host", () => {
       expect(wrongNonce.status).toBe(401);
       const wrongHost = yield* redeem(
         port,
-        yield* ticketFor(nonce, "3000-abc-dorothy.bagels.top"),
+        yield* ticketFor(nonce, "3000-abc-maple.example.net"),
         nonce,
       );
       expect(wrongHost.status).toBe(401);

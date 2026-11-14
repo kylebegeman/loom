@@ -29,13 +29,13 @@ const DAY = 24 * HOUR;
 
 const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
 
-const dorothy: PageLibrary.PageComputer = {
-  subject: "loom-host:environment-dorothy",
-  environmentId: EnvironmentId.make("environment-dorothy"),
+const maple: PageLibrary.PageComputer = {
+  subject: "loom-host:environment-maple",
+  environmentId: EnvironmentId.make("environment-maple"),
 };
-const nora: PageLibrary.PageComputer = {
-  subject: "loom-host:environment-nora",
-  environmentId: EnvironmentId.make("environment-nora"),
+const juniper: PageLibrary.PageComputer = {
+  subject: "loom-host:environment-juniper",
+  environmentId: EnvironmentId.make("environment-juniper"),
 };
 
 const publishRequest = (
@@ -106,9 +106,9 @@ describe("PageLibraryService", () => {
         yield* run(env, (pages) =>
           Effect.gen(function* () {
             expect(pages.pagesOrigin).toBeNull();
-            expect(yield* reasonOf(pages.publish(dorothy, publishRequest()))).toBe("unavailable");
-            expect(yield* reasonOf(pages.list(dorothy))).toBe("unavailable");
-            expect(yield* reasonOf(pages.update(dorothy, { pageId: "x", action: "keep" }))).toBe(
+            expect(yield* reasonOf(pages.publish(maple, publishRequest()))).toBe("unavailable");
+            expect(yield* reasonOf(pages.list(maple))).toBe("unavailable");
+            expect(yield* reasonOf(pages.update(maple, { pageId: "x", action: "keep" }))).toBe(
               "unavailable",
             );
             expect(yield* reasonOf(pages.view("x"))).toBe("unavailable");
@@ -117,13 +117,11 @@ describe("PageLibraryService", () => {
                 pages.addReply({ pageId: "x", replyId: replyId(1), text: "hi", viewer: "owner" }),
               ),
             ).toBe("unavailable");
-            expect(yield* reasonOf(pages.nextReplies(dorothy, 0))).toBe("unavailable");
+            expect(yield* reasonOf(pages.nextReplies(maple, 0))).toBe("unavailable");
             expect(
-              yield* reasonOf(
-                pages.ackReply(dorothy, { replyId: replyId(1), outcome: "delivered" }),
-              ),
+              yield* reasonOf(pages.ackReply(maple, { replyId: replyId(1), outcome: "delivered" })),
             ).toBe("unavailable");
-            expect(yield* reasonOf(pages.signOutReaders(dorothy))).toBe("unavailable");
+            expect(yield* reasonOf(pages.signOutReaders(maple))).toBe("unavailable");
           }),
         );
       }
@@ -137,7 +135,7 @@ describe("PageLibraryService", () => {
     run(ENV, (pages) =>
       Effect.gen(function* () {
         const html = "<p>Café ✓</p>";
-        const page = yield* pages.publish(dorothy, publishRequest({ title: "  Plan  ", html }));
+        const page = yield* pages.publish(maple, publishRequest({ title: "  Plan  ", html }));
         expect(page.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
         expect(page).toEqual({
           id: page.id,
@@ -159,7 +157,7 @@ describe("PageLibraryService", () => {
 
         yield* TestClock.adjust(DAY);
         const republished = yield* pages.publish(
-          dorothy,
+          maple,
           publishRequest({ pageId: page.id, title: "Dossier", kind: "dossier", html: "<p>v2</p>" }),
         );
         expect(republished).toMatchObject({
@@ -176,24 +174,24 @@ describe("PageLibraryService", () => {
         expect(
           yield* reasonOf(
             pages.publish(
-              dorothy,
+              maple,
               publishRequest({ pageId: page.id, threadId: ThreadId.make("thread-other") }),
             ),
           ),
         ).toBe("not-found");
-        expect(yield* reasonOf(pages.publish(nora, publishRequest({ pageId: page.id })))).toBe(
+        expect(yield* reasonOf(pages.publish(juniper, publishRequest({ pageId: page.id })))).toBe(
           "not-found",
         );
-        expect(yield* reasonOf(pages.publish(dorothy, publishRequest({ pageId: "missing" })))).toBe(
+        expect(yield* reasonOf(pages.publish(maple, publishRequest({ pageId: "missing" })))).toBe(
           "not-found",
         );
 
-        expect(yield* reasonOf(pages.publish(dorothy, publishRequest({ title: "   " })))).toBe(
+        expect(yield* reasonOf(pages.publish(maple, publishRequest({ title: "   " })))).toBe(
           "invalid",
         );
         // Under the character limit the schema checks, but over the byte limit once encoded.
         const wide = "é".repeat(PREVIEW_PAGE_MAX_BYTES / 2 + 1);
-        expect(yield* reasonOf(pages.publish(dorothy, publishRequest({ html: wide })))).toBe(
+        expect(yield* reasonOf(pages.publish(maple, publishRequest({ html: wide })))).toBe(
           "too-large",
         );
       }),
@@ -203,25 +201,25 @@ describe("PageLibraryService", () => {
   it.effect("keeps, releases, ends and restores a page", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const page = yield* pages.publish(dorothy, publishRequest());
+        const page = yield* pages.publish(maple, publishRequest());
 
-        const kept = yield* pages.update(dorothy, { pageId: page.id, action: "keep" });
+        const kept = yield* pages.update(maple, { pageId: page.id, action: "keep" });
         expect(kept).toMatchObject({ state: "open", kept: true, expiresAt: null });
         yield* TestClock.adjust(40 * DAY);
         expect((yield* pages.view(page.id))?.page.state).toBe("open");
 
-        const released = yield* pages.update(dorothy, { pageId: page.id, action: "release" });
+        const released = yield* pages.update(maple, { pageId: page.id, action: "release" });
         const releasedAt = START + 40 * DAY;
         expect(released).toMatchObject({ kept: false, expiresAt: iso(releasedAt + 30 * DAY) });
         // Release always gives an open page thirty days from the moment it is released.
         yield* TestClock.adjust(DAY);
         const endedAt = START + 41 * DAY;
-        expect(yield* pages.update(dorothy, { pageId: page.id, action: "release" })).toMatchObject({
+        expect(yield* pages.update(maple, { pageId: page.id, action: "release" })).toMatchObject({
           kept: false,
           expiresAt: iso(endedAt + 30 * DAY),
         });
 
-        const ended = yield* pages.update(dorothy, { pageId: page.id, action: "end" });
+        const ended = yield* pages.update(maple, { pageId: page.id, action: "end" });
         expect(ended).toMatchObject({
           state: "ended",
           kept: false,
@@ -231,15 +229,13 @@ describe("PageLibraryService", () => {
         });
         expect(yield* pages.view(page.id)).toBeNull();
         for (const action of ["keep", "release", "end"] as const)
-          expect(yield* reasonOf(pages.update(dorothy, { pageId: page.id, action }))).toBe(
-            "invalid",
-          );
-        expect(yield* reasonOf(pages.update(nora, { pageId: page.id, action: "restore" }))).toBe(
+          expect(yield* reasonOf(pages.update(maple, { pageId: page.id, action }))).toBe("invalid");
+        expect(yield* reasonOf(pages.update(juniper, { pageId: page.id, action: "restore" }))).toBe(
           "not-found",
         );
 
         yield* TestClock.adjust(7 * DAY);
-        const restored = yield* pages.update(dorothy, { pageId: page.id, action: "restore" });
+        const restored = yield* pages.update(maple, { pageId: page.id, action: "restore" });
         expect(restored).toMatchObject({
           state: "open",
           kept: false,
@@ -247,7 +243,7 @@ describe("PageLibraryService", () => {
           restorableUntil: null,
           expiresAt: iso(endedAt + 7 * DAY + 30 * DAY),
         });
-        expect(yield* reasonOf(pages.update(dorothy, { pageId: page.id, action: "restore" }))).toBe(
+        expect(yield* reasonOf(pages.update(maple, { pageId: page.id, action: "restore" }))).toBe(
           "invalid",
         );
       }),
@@ -257,16 +253,16 @@ describe("PageLibraryService", () => {
   it.effect("expires pages and lists them only while they can be restored", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const first = yield* pages.publish(dorothy, publishRequest({ title: "First" }));
+        const first = yield* pages.publish(maple, publishRequest({ title: "First" }));
         yield* TestClock.adjust(HOUR);
-        const second = yield* pages.publish(dorothy, publishRequest({ title: "Second" }));
-        const theirs = yield* pages.publish(nora, publishRequest({ title: "Theirs" }));
+        const second = yield* pages.publish(maple, publishRequest({ title: "Second" }));
+        const theirs = yield* pages.publish(juniper, publishRequest({ title: "Theirs" }));
 
-        expect((yield* pages.list(dorothy)).map((page) => page.title)).toEqual(["Second", "First"]);
-        expect((yield* pages.list(nora)).map((page) => page.id)).toEqual([theirs.id]);
+        expect((yield* pages.list(maple)).map((page) => page.title)).toEqual(["Second", "First"]);
+        expect((yield* pages.list(juniper)).map((page) => page.id)).toEqual([theirs.id]);
 
         yield* TestClock.adjust(30 * DAY - HOUR);
-        const listed = yield* pages.list(dorothy);
+        const listed = yield* pages.list(maple);
         expect(listed.find((page) => page.id === first.id)).toMatchObject({
           state: "expired",
           expiresAt: iso(START + 30 * DAY),
@@ -281,15 +277,16 @@ describe("PageLibraryService", () => {
         ).toBe("not-found");
 
         yield* TestClock.adjust(7 * DAY);
-        expect(yield* pages.update(dorothy, { pageId: first.id, action: "restore" })).toMatchObject(
-          { state: "open", expiresAt: iso(START + 67 * DAY) },
-        );
+        expect(yield* pages.update(maple, { pageId: first.id, action: "restore" })).toMatchObject({
+          state: "open",
+          expiresAt: iso(START + 67 * DAY),
+        });
         // An hour later the second page is past its window: it is gone, not restorable.
         yield* TestClock.adjust(HOUR + 1);
-        expect(
-          yield* reasonOf(pages.update(dorothy, { pageId: second.id, action: "restore" })),
-        ).toBe("not-found");
-        expect((yield* pages.list(dorothy)).map((page) => page.id)).toEqual([first.id]);
+        expect(yield* reasonOf(pages.update(maple, { pageId: second.id, action: "restore" }))).toBe(
+          "not-found",
+        );
+        expect((yield* pages.list(maple)).map((page) => page.id)).toEqual([first.id]);
       }),
     ),
   );
@@ -297,13 +294,13 @@ describe("PageLibraryService", () => {
   it.effect("purges pages past restoring with their replies, and old acked replies", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const ending = yield* pages.publish(dorothy, publishRequest({ title: "Ending" }));
-        const staying = yield* pages.publish(dorothy, publishRequest({ title: "Staying" }));
-        yield* pages.update(dorothy, { pageId: staying.id, action: "keep" });
+        const ending = yield* pages.publish(maple, publishRequest({ title: "Ending" }));
+        const staying = yield* pages.publish(maple, publishRequest({ title: "Staying" }));
+        yield* pages.update(maple, { pageId: staying.id, action: "keep" });
         for (const [index, pageId] of [ending.id, staying.id].entries())
           yield* pages.addReply({ pageId, replyId: replyId(index), text: "note", viewer: "owner" });
-        yield* pages.ackReply(dorothy, { replyId: replyId(1), outcome: "delivered" });
-        yield* pages.update(dorothy, { pageId: ending.id, action: "end" });
+        yield* pages.ackReply(maple, { replyId: replyId(1), outcome: "delivered" });
+        yield* pages.update(maple, { pageId: ending.id, action: "end" });
 
         yield* TestClock.adjust(7 * DAY - MINUTE);
         expect((yield* rows).pages).toHaveLength(2);
@@ -319,28 +316,28 @@ describe("PageLibraryService", () => {
   it.effect("caps open pages per computer", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const first = yield* pages.publish(dorothy, publishRequest());
+        const first = yield* pages.publish(maple, publishRequest());
         yield* Effect.forEach(Array.from({ length: 499 }), () =>
-          pages.publish(dorothy, publishRequest()),
+          pages.publish(maple, publishRequest()),
         );
-        expect(yield* reasonOf(pages.publish(dorothy, publishRequest()))).toBe("blocked");
+        expect(yield* reasonOf(pages.publish(maple, publishRequest()))).toBe("blocked");
         // Other computers have their own room, and updating an open page takes none.
-        yield* pages.publish(nora, publishRequest());
-        yield* pages.publish(dorothy, publishRequest({ pageId: first.id, html: "<p>v2</p>" }));
+        yield* pages.publish(juniper, publishRequest());
+        yield* pages.publish(maple, publishRequest({ pageId: first.id, html: "<p>v2</p>" }));
 
-        yield* pages.update(dorothy, { pageId: first.id, action: "end" });
-        const replacement = yield* pages.publish(dorothy, publishRequest());
+        yield* pages.update(maple, { pageId: first.id, action: "end" });
+        const replacement = yield* pages.publish(maple, publishRequest());
         expect(
-          yield* Effect.flip(pages.update(dorothy, { pageId: first.id, action: "restore" })),
+          yield* Effect.flip(pages.update(maple, { pageId: first.id, action: "restore" })),
         ).toMatchObject({
           reason: "blocked",
           message: "This computer already has 500 open pages. End one before restoring another.",
         });
-        expect(yield* reasonOf(pages.publish(dorothy, publishRequest({ pageId: first.id })))).toBe(
+        expect(yield* reasonOf(pages.publish(maple, publishRequest({ pageId: first.id })))).toBe(
           "blocked",
         );
-        yield* pages.update(dorothy, { pageId: replacement.id, action: "end" });
-        expect((yield* pages.update(dorothy, { pageId: first.id, action: "restore" })).state).toBe(
+        yield* pages.update(maple, { pageId: replacement.id, action: "end" });
+        expect((yield* pages.update(maple, { pageId: first.id, action: "restore" })).state).toBe(
           "open",
         );
       }),
@@ -352,14 +349,14 @@ describe("PageLibraryService", () => {
       Effect.gen(function* () {
         const closedWithReply = (index: number) =>
           Effect.gen(function* () {
-            const page = yield* pages.publish(dorothy, publishRequest());
+            const page = yield* pages.publish(maple, publishRequest());
             yield* pages.addReply({
               pageId: page.id,
               replyId: replyId(index),
               text: "note",
               viewer: "owner",
             });
-            yield* pages.update(dorothy, { pageId: page.id, action: "end" });
+            yield* pages.update(maple, { pageId: page.id, action: "end" });
             return page;
           });
         const longest = yield* closedWithReply(0);
@@ -370,27 +367,27 @@ describe("PageLibraryService", () => {
           closedWithReply(index + 2),
         );
         yield* Effect.forEach(Array.from({ length: 499 }), () =>
-          pages.publish(dorothy, publishRequest()),
+          pages.publish(maple, publishRequest()),
         );
         expect((yield* rows).pages).toHaveLength(1000);
 
         // Every closed page still has a reply on its way, so none can make room.
-        expect(yield* Effect.flip(pages.publish(dorothy, publishRequest()))).toMatchObject({
+        expect(yield* Effect.flip(pages.publish(maple, publishRequest()))).toMatchObject({
           reason: "blocked",
           message:
             "This computer already keeps 1000 pages, counting closed ones whose replies have not reached it yet. Try again once those replies arrive.",
         });
-        yield* pages.publish(nora, publishRequest());
+        yield* pages.publish(juniper, publishRequest());
 
         for (const index of [1, 0])
-          yield* pages.ackReply(dorothy, { replyId: replyId(index), outcome: "delivered" });
-        yield* pages.publish(dorothy, publishRequest());
+          yield* pages.ackReply(maple, { replyId: replyId(index), outcome: "delivered" });
+        yield* pages.publish(maple, publishRequest());
         const stored = (yield* rows).pages;
         expect(stored).toHaveLength(1001);
         expect(stored).not.toContain(longest.id);
         expect(stored).toContain(later.id);
         expect(
-          yield* reasonOf(pages.update(dorothy, { pageId: longest.id, action: "restore" })),
+          yield* reasonOf(pages.update(maple, { pageId: longest.id, action: "restore" })),
         ).toBe("not-found");
       }),
     ),
@@ -399,13 +396,13 @@ describe("PageLibraryService", () => {
   it.effect("lists open pages before closed ones", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        yield* pages.publish(dorothy, publishRequest({ title: "Open" }));
+        yield* pages.publish(maple, publishRequest({ title: "Open" }));
         yield* TestClock.adjust(MINUTE);
-        const ended = yield* pages.publish(dorothy, publishRequest({ title: "Ended" }));
-        yield* pages.update(dorothy, { pageId: ended.id, action: "end" });
+        const ended = yield* pages.publish(maple, publishRequest({ title: "Ended" }));
+        yield* pages.update(maple, { pageId: ended.id, action: "end" });
         yield* TestClock.adjust(MINUTE);
-        yield* pages.publish(dorothy, publishRequest({ title: "Newest" }));
-        expect((yield* pages.list(dorothy)).map((page) => page.title)).toEqual([
+        yield* pages.publish(maple, publishRequest({ title: "Newest" }));
+        expect((yield* pages.list(maple)).map((page) => page.title)).toEqual([
           "Newest",
           "Open",
           "Ended",
@@ -418,17 +415,17 @@ describe("PageLibraryService", () => {
     run(ENV, (pages) =>
       Effect.gen(function* () {
         expect(yield* pages.readersSignedOutAt).toBe(0);
-        yield* pages.signOutReaders(dorothy);
+        yield* pages.signOutReaders(maple);
         expect(yield* pages.readersSignedOutAt).toBe(START);
         yield* TestClock.adjust(HOUR);
-        yield* pages.signOutReaders(nora);
+        yield* pages.signOutReaders(juniper);
         expect(yield* pages.readersSignedOutAt).toBe(START + HOUR);
         // A browser signed in after a sign-out holds a cookie from just past it, so a second
         // sign-out in the same millisecond, or after the clock stepped back, must still pass it.
-        yield* pages.signOutReaders(dorothy);
+        yield* pages.signOutReaders(maple);
         expect(yield* pages.readersSignedOutAt).toBe(START + HOUR + 1);
         yield* TestClock.setTime(START + MINUTE);
-        yield* pages.signOutReaders(nora);
+        yield* pages.signOutReaders(juniper);
         expect(yield* pages.readersSignedOutAt).toBe(START + HOUR + 2);
       }),
     ),
@@ -440,10 +437,10 @@ describe("PageLibraryService", () => {
         const sql = yield* SqlClient.SqlClient;
         yield* sql`DROP TABLE fork_preview_page_signouts`;
         expect(yield* reasonOf(pages.readersSignedOutAt)).toBe("io");
-        expect(yield* reasonOf(pages.signOutReaders(dorothy))).toBe("io");
+        expect(yield* reasonOf(pages.signOutReaders(maple))).toBe("io");
         yield* sql`DROP TABLE fork_preview_page_replies`;
         yield* sql`DROP TABLE fork_preview_pages`;
-        expect(yield* reasonOf(pages.list(dorothy))).toBe("io");
+        expect(yield* reasonOf(pages.list(maple))).toBe("io");
       }),
     ),
   );
@@ -451,7 +448,7 @@ describe("PageLibraryService", () => {
   it.effect("validates replies, caps waiting ones and ignores a retried send", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const page = yield* pages.publish(dorothy, publishRequest());
+        const page = yield* pages.publish(maple, publishRequest());
         const reply = (id: string, text = "Ship it") =>
           pages.addReply({ pageId: page.id, replyId: id, text, viewer: "owner" });
 
@@ -471,7 +468,7 @@ describe("PageLibraryService", () => {
         expect(yield* reasonOf(reply(replyId(1000)))).toBe("blocked");
         // A browser retrying a send that already landed hears success even on a full queue.
         yield* reply(replyId(999));
-        yield* pages.ackReply(dorothy, { replyId: replyId(0), outcome: "delivered" });
+        yield* pages.ackReply(maple, { replyId: replyId(0), outcome: "delivered" });
         yield* reply(replyId(1000));
         expect((yield* rows).replies).toHaveLength(1001);
       }),
@@ -481,7 +478,7 @@ describe("PageLibraryService", () => {
   it.effect("leases replies, redelivers them after the lease lapses and stops after an ack", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const page = yield* pages.publish(dorothy, publishRequest({ title: "Plan" }));
+        const page = yield* pages.publish(maple, publishRequest({ title: "Plan" }));
         for (let index = 0; index < 25; index++) {
           yield* pages.addReply({
             pageId: page.id,
@@ -492,7 +489,7 @@ describe("PageLibraryService", () => {
           yield* TestClock.adjust(1);
         }
 
-        const firstBatch = yield* pages.nextReplies(dorothy, 0);
+        const firstBatch = yield* pages.nextReplies(maple, 0);
         expect(firstBatch).toHaveLength(20);
         expect(firstBatch[0]).toEqual({
           replyId: replyId(0),
@@ -503,24 +500,24 @@ describe("PageLibraryService", () => {
           text: "reply 0",
           createdAt: iso(START),
         });
-        expect((yield* pages.nextReplies(dorothy, 0)).map((reply) => reply.replyId)).toEqual(
+        expect((yield* pages.nextReplies(maple, 0)).map((reply) => reply.replyId)).toEqual(
           [20, 21, 22, 23, 24].map(replyId),
         );
-        expect(yield* pages.nextReplies(dorothy, 0)).toEqual([]);
-        expect(yield* pages.nextReplies(nora, 0)).toEqual([]);
+        expect(yield* pages.nextReplies(maple, 0)).toEqual([]);
+        expect(yield* pages.nextReplies(juniper, 0)).toEqual([]);
 
-        yield* pages.ackReply(dorothy, { replyId: replyId(0), outcome: "delivered" });
-        yield* pages.ackReply(dorothy, {
+        yield* pages.ackReply(maple, { replyId: replyId(0), outcome: "delivered" });
+        yield* pages.ackReply(maple, {
           replyId: replyId(1),
           outcome: "rejected",
           detail: "The thread was archived.",
         });
         // Another computer cannot settle this computer's reply, and unknown ids are a no-op.
-        yield* pages.ackReply(nora, { replyId: replyId(2), outcome: "delivered" });
-        yield* pages.ackReply(dorothy, { replyId: "reply-unknown", outcome: "delivered" });
+        yield* pages.ackReply(juniper, { replyId: replyId(2), outcome: "delivered" });
+        yield* pages.ackReply(maple, { replyId: "reply-unknown", outcome: "delivered" });
 
         yield* TestClock.adjust(2 * MINUTE);
-        const redelivered = yield* pages.nextReplies(dorothy, 0);
+        const redelivered = yield* pages.nextReplies(maple, 0);
         expect(redelivered.map((reply) => reply.replyId)).toEqual(
           Array.from({ length: 20 }, (_, index) => replyId(index + 2)),
         );
@@ -542,10 +539,10 @@ describe("PageLibraryService", () => {
   it.effect("waits for the next reply and wakes when one arrives", () =>
     run(ENV, (pages) =>
       Effect.gen(function* () {
-        const page = yield* pages.publish(dorothy, publishRequest());
-        const theirs = yield* pages.publish(nora, publishRequest());
+        const page = yield* pages.publish(maple, publishRequest());
+        const theirs = yield* pages.publish(juniper, publishRequest());
 
-        const waiting = yield* Effect.forkChild(pages.nextReplies(dorothy, 25_000));
+        const waiting = yield* Effect.forkChild(pages.nextReplies(maple, 25_000));
         yield* TestClock.adjust("1 second");
         expect(waiting.pollUnsafe()).toBeUndefined();
         // A reply for another computer leaves this one waiting.
@@ -555,18 +552,18 @@ describe("PageLibraryService", () => {
         yield* pages.addReply({ pageId: page.id, replyId: replyId(2), text: "b", viewer: "o" });
         expect((yield* Fiber.join(waiting)).map((reply) => reply.replyId)).toEqual([replyId(2)]);
 
-        const idle = yield* Effect.forkChild(pages.nextReplies(dorothy, 25_000));
+        const idle = yield* Effect.forkChild(pages.nextReplies(maple, 25_000));
         yield* TestClock.adjust("24 seconds");
         expect(idle.pollUnsafe()).toBeUndefined();
         yield* TestClock.adjust("1 second");
         expect(yield* Fiber.join(idle)).toEqual([]);
 
         // A closed request must not take a reply with it.
-        const closed = yield* Effect.forkChild(pages.nextReplies(dorothy, 25_000));
+        const closed = yield* Effect.forkChild(pages.nextReplies(maple, 25_000));
         yield* TestClock.adjust("1 second");
         yield* Fiber.interrupt(closed);
         yield* pages.addReply({ pageId: page.id, replyId: replyId(3), text: "c", viewer: "o" });
-        expect((yield* pages.nextReplies(dorothy, 0)).map((reply) => reply.replyId)).toEqual([
+        expect((yield* pages.nextReplies(maple, 0)).map((reply) => reply.replyId)).toEqual([
           replyId(3),
         ]);
       }),

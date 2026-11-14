@@ -207,7 +207,7 @@ it("waits for explicit resume after reopening without replacing another project'
     root.render(
       <ProjectEditorDialog
         initialTitle="desk"
-        initialResource="https://github.com/kylebegeman/desk.git"
+        initialResource="https://github.com/octocat/desk.git"
         continueTo="clone"
         authorityId={EnvironmentId.make("library")}
         onSaved={onSaved}
@@ -221,9 +221,7 @@ it("waits for explicit resume after reopening without replacing another project'
   expect(state.create.mock.calls[2]?.[0].input).toEqual(
     expect.objectContaining({
       title: "desk",
-      resources: [
-        expect.objectContaining({ remoteUrl: "https://github.com/kylebegeman/desk.git" }),
-      ],
+      resources: [expect.objectContaining({ remoteUrl: "https://github.com/octocat/desk.git" })],
     }),
   );
   expect(state.create.mock.calls[2]?.[0].input.requestId).not.toBe(

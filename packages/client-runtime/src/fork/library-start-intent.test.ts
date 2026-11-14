@@ -67,8 +67,8 @@ const copy = (id: string): LibraryWorkingCopy => ({
 
 describe("Start intent", () => {
   it.each([
-    "/Users/kyle/Aspect Avy",
-    "~/Developer/Embrace",
+    "/Users/me/Aspect Avy",
+    "~/Developer/Acme",
     "C:\\Projects\\App",
     "\\\\server\\share\\App",
   ])("recognizes folder %s without interpreting it as a repository", (path) => {
@@ -342,7 +342,7 @@ describe("one-step folder actions", () => {
   const docs = project("docs");
 
   it("names a new project after the folder, ignoring trailing separators", () => {
-    expect(libraryFolderTitle("/Users/kyle/Aspect Avy/")).toBe("Aspect Avy");
+    expect(libraryFolderTitle("/Users/me/Aspect Avy/")).toBe("Aspect Avy");
     expect(libraryFolderTitle("C:\\Projects\\App\\")).toBe("App");
     expect(libraryFolderTitle("/")).toBe("Project");
     expect(
@@ -399,12 +399,12 @@ describe("one-step folder actions", () => {
 });
 
 describe("starting a conversation without the settings step", () => {
-  const DOROTHY = EnvironmentId.make("dorothy");
+  const MAPLE = EnvironmentId.make("maple");
   const BOOK = EnvironmentId.make("book");
   const computers: LibraryLaunchComputer[] = [
     {
-      environmentId: DOROTHY,
-      label: "Dorothy",
+      environmentId: MAPLE,
+      label: "Maple",
       online: true,
       supportsExecution: true,
       workingThreads: 0,
@@ -446,12 +446,12 @@ describe("starting a conversation without the settings step", () => {
     libraryQuickLaunch({ project: target, copies, computers, threads: [] });
 
   it("starts on the online computer holding the project's one ready copy", () => {
-    const ready = copyOn("ready", DOROTHY);
+    const ready = copyOn("ready", MAPLE);
     expect(
       quick([ready, copyOn("offline", BOOK), { ...copy("other"), projectId: "other" }]),
     ).toEqual({
-      environmentId: DOROTHY,
-      label: "Dorothy",
+      environmentId: MAPLE,
+      label: "Maple",
       copy: ready,
     });
   });
@@ -459,13 +459,13 @@ describe("starting a conversation without the settings step", () => {
   it("leaves the choice to the settings when files need attention or a choice", () => {
     expect(quick([])).toBeNull();
     expect(quick([copyOn("offline", BOOK)])).toBeNull();
-    expect(quick([copyOn("a", DOROTHY), copyOn("b", DOROTHY)])).toBeNull();
+    expect(quick([copyOn("a", MAPLE), copyOn("b", MAPLE)])).toBeNull();
     expect(
       quick([
-        copyOn("behind", DOROTHY, {
+        copyOn("behind", MAPLE, {
           health: {
             copyId: "behind",
-            environmentId: DOROTHY,
+            environmentId: MAPLE,
             checkedAt: now,
             repositories: [
               {
@@ -484,16 +484,16 @@ describe("starting a conversation without the settings step", () => {
       ]),
     ).toBeNull();
     expect(
-      quick([copyOn("ready", DOROTHY)], { ...app, profile: { requiredTools: [{ id: "node" }] } }),
+      quick([copyOn("ready", MAPLE)], { ...app, profile: { requiredTools: [{ id: "node" }] } }),
     ).toBeNull();
-    expect(quick([copyOn("ready", DOROTHY)], { ...app, archived: true })).toBeNull();
+    expect(quick([copyOn("ready", MAPLE)], { ...app, archived: true })).toBeNull();
   });
 
   it("still starts on a copy with uncommitted files", () => {
-    const changed = copyOn("changed", DOROTHY, {
+    const changed = copyOn("changed", MAPLE, {
       health: {
         copyId: "changed",
-        environmentId: DOROTHY,
+        environmentId: MAPLE,
         checkedAt: now,
         repositories: [
           {
@@ -509,13 +509,13 @@ describe("starting a conversation without the settings step", () => {
         ],
       },
     });
-    expect(quick([changed])).toEqual({ environmentId: DOROTHY, label: "Dorothy", copy: changed });
+    expect(quick([changed])).toEqual({ environmentId: MAPLE, label: "Maple", copy: changed });
   });
 
   it("promises only the files the settings would use on that computer", () => {
-    const ready = copyOn("ready", DOROTHY);
+    const ready = copyOn("ready", MAPLE);
     // Saved files from a released copy make the settings ask which files to use.
-    const released = copyOn("released", DOROTHY, {
+    const released = copyOn("released", MAPLE, {
       ownership: "managed",
       state: "released",
       recovery: {
@@ -527,10 +527,10 @@ describe("starting a conversation without the settings step", () => {
     });
     expect(quick([ready, released])).toBeNull();
     // A copy that no longer covers the project is not one of the choices.
-    const partial = copyOn("partial", DOROTHY, { repositories: [] });
+    const partial = copyOn("partial", MAPLE, { repositories: [] });
     expect(quick([ready, partial])).toEqual({
-      environmentId: DOROTHY,
-      label: "Dorothy",
+      environmentId: MAPLE,
+      label: "Maple",
       copy: ready,
     });
   });

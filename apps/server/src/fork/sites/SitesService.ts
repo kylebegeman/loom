@@ -99,7 +99,7 @@ const make = Effect.gen(function* () {
   const library = yield* LibraryService.LibraryService;
   const connection = yield* LibraryConnectionService;
   const noRedirects = Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" });
-  const api = env.LOOM_SITES_API_ORIGIN?.trim() || "https://api.begam.in";
+  const api = env.LOOM_SITES_API_ORIGIN?.trim() ?? "";
   const issuer = env.LOOM_IDENTITY_ISSUER?.trim();
   const id = env.LOOM_SITES_CLIENT_ID?.trim();
   const secret = env.LOOM_SITES_CLIENT_SECRET?.trim()
@@ -121,6 +121,7 @@ const make = Effect.gen(function* () {
       return false;
     }
   };
+  // A missing API origin is invalid configuration, so set credentials never read as unconfigured.
   const configurationValid = configured && validOrigin(api) && validOrigin(issuer!);
   const lock = yield* Semaphore.make(1);
   const cached = new Map<boolean, { value: Redacted.Redacted<string>; expiresAt: number }>();

@@ -55,7 +55,7 @@ describe("Loom mobile identity", () => {
       LOOM_MOBILE_EXPO_OWNER: "own-account",
     },
     {
-      LOOM_MOBILE_EXPO_PROJECT_ID: "57b4c15b-bebd-4783-afdf-643f3b559cfa",
+      LOOM_MOBILE_EXPO_PROJECT_ID: "8f14e45f-ceea-467a-9575-2b7e3d1c9a10",
       LOOM_MOBILE_EXPO_OWNER: "pingdotgg",
     },
     { LOOM_MOBILE_EXPO_PROJECT_ID: "not-a-uuid", LOOM_MOBILE_EXPO_OWNER: "own-account" },
@@ -72,7 +72,7 @@ describe("Loom mobile identity", () => {
     );
     expect(
       resolveLoomMobileIdentity({
-        LOOM_MOBILE_EXPO_PROJECT_ID: "57b4c15b-bebd-4783-afdf-643f3b559cfa",
+        LOOM_MOBILE_EXPO_PROJECT_ID: "8f14e45f-ceea-467a-9575-2b7e3d1c9a10",
         LOOM_MOBILE_EXPO_OWNER: "own-account",
         LOOM_MOBILE_UPDATES_ENABLED: "1",
       }).updatesEnabled,
@@ -82,7 +82,7 @@ describe("Loom mobile identity", () => {
   it("does not opt a newly configured Expo project into OTA automatically", () => {
     expect(
       resolveLoomMobileIdentity({
-        LOOM_MOBILE_EXPO_PROJECT_ID: "57b4c15b-bebd-4783-afdf-643f3b559cfa",
+        LOOM_MOBILE_EXPO_PROJECT_ID: "8f14e45f-ceea-467a-9575-2b7e3d1c9a10",
         LOOM_MOBILE_EXPO_OWNER: "own-account",
       }).updatesEnabled,
     ).toBe(false);

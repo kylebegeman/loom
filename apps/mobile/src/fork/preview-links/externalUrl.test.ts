@@ -6,8 +6,8 @@ import { previewLinkOpenUrl } from "./externalUrl";
 vi.mock("./entryUrl", () => ({ requestPreviewEntryUrl: vi.fn() }));
 
 const lookup = vi.mocked(requestPreviewEntryUrl);
-const LINK = "https://5173-k3f9x2-dorothy.bagels.top/app?x=1";
-const ENTRY = "https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc";
+const LINK = "https://5173-k3f9x2-maple.example.net/app?x=1";
+const ENTRY = "https://5173-k3f9x2-maple.example.net/__loom/enter?code=abc";
 
 beforeEach(() => {
   lookup.mockReset();

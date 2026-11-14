@@ -6,8 +6,8 @@ const test = NodeTest.test,
   assert = NodeAssert;
 const now = Date.now();
 const config = {
-  switchboardDashboardUrl: "https://dorothy.test:8443",
-  switchboardStatusUrl: "https://dorothy.test:8443/status",
+  switchboardDashboardUrl: "https://maple.test:8443",
+  switchboardStatusUrl: "https://maple.test:8443/status",
   switchboardUrl: "http://100.64.0.1:8317",
   switchboardCli: "/private/switchboard",
   profile: "laptop",
@@ -180,7 +180,7 @@ test("wake is cancel-first and absent unless the Switchboard owner advertises a 
   for (const supported of [true, false]) {
     const commands = [],
       choices = [
-        supported ? "Wake dorothy on the local network" : "Close",
+        supported ? "Wake maple on the local network" : "Close",
         "Keep current state",
         "Close",
       ];
@@ -189,7 +189,7 @@ test("wake is cancel-first and absent unless the Switchboard owner advertises a 
       {},
       {
         collect: async () => validateHubStatus(status(), now),
-        recovery: async () => ({ supported, hub: "dorothy", reviewSHA256: "a".repeat(64) }),
+        recovery: async () => ({ supported, hub: "maple", reviewSHA256: "a".repeat(64) }),
         choose: async (_, items) => {
           const choice = choices.shift();
           assert.ok(items.includes(choice));
@@ -206,7 +206,7 @@ test("wake is cancel-first and absent unless the Switchboard owner advertises a 
   }
 });
 test("a reviewed wake calls only Switchboard and does not start AI or claim readiness", async () => {
-  const choices = ["Wake dorothy on the local network", "Send wake request", "Close"],
+  const choices = ["Wake maple on the local network", "Send wake request", "Close"],
     calls = [],
     messages = [];
   await nativeHub(
@@ -214,7 +214,7 @@ test("a reviewed wake calls only Switchboard and does not start AI or claim read
     {},
     {
       collect: async () => validateHubStatus(status(), now),
-      recovery: async () => ({ supported: true, hub: "dorothy", reviewSHA256: "a".repeat(64) }),
+      recovery: async () => ({ supported: true, hub: "maple", reviewSHA256: "a".repeat(64) }),
       show: (text) => messages.push(text),
       choose: async () => choices.shift(),
       command: async (file, args) => {

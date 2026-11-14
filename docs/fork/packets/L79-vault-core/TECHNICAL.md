@@ -91,6 +91,6 @@ ForkLayer/ForkRuntime. RPC/MCP/CLI adapters are thin. Client-runtime commands se
 and native mobile; capability checks hide controls on unsupported servers. No provider launcher,
 SSH agent, live platform API or personal credential source is modified.
 
-The existing begam.in platform and Helios were inspected read-only. Their identity/deployment
+The existing example.com platform and Helios were inspected read-only. Their identity/deployment
 contracts remain the integration direction; no separate parallel login or deployment stack is
 introduced. Backend service tokens must not become the permanent Loom account model.

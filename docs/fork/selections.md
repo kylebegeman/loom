@@ -1,7 +1,7 @@
 # Loom: features selected from old Loom
 
 Recorded 2026-09-24; outcomes and packet IDs added the same day. These are the panels and
-features chosen from old Loom (`bagelvault/loom`, final release 0.13.10) to rebuild in this
+features chosen from old Loom (the old private Loom repository, final release 0.13.10) to rebuild in this
 fork as additive, fork-owned features. This file only records the choices; each item gets
 its own design and documentation pass before any code. Old Loom is a reference, not a source
 to copy: its server exposed about 100 capability areas and its own thread engine, where T3

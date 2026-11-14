@@ -198,7 +198,7 @@ describe("LibraryProjectProfile", () => {
     }
     for (const text of [
       // Paths and hosts, even with a random-looking segment.
-      "/Users/kyle/Library/Developer/CoreSimulator/Devices/CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT/data",
+      "/Users/me/Library/Developer/CoreSimulator/Devices/CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT/data",
       "./build/034EoYiAKt9DsyMalKxX3ZRbiGkW7xiK2fbYgKXg.tar.gz",
       "https://cdn.example.com/assets/jkTFulcxsfR2GVqKcDuBhiYn9NbZJXmM9eIFx470/app.js",
       "jkTFulcxsfR2GVqKcDuBhiYn9NbZJXmM9eIFx470.example.com",

@@ -136,7 +136,7 @@ import { ConnectEmailAccountView } from "./ConnectEmailAuthView";
 
 const computer: RelayClientEnvironmentRecord = {
   environmentId: EnvironmentId.make("linked-mac"),
-  label: "Dorothy",
+  label: "Maple",
   endpoint: {
     providerKind: "cloudflare_tunnel",
     httpBaseUrl: "https://mac.example.test",
@@ -193,7 +193,7 @@ describe("email-account linked computer management", () => {
     render();
     openComputers();
     expect(container.textContent).toContain("Registered servers");
-    expect(container.textContent).toContain("Dorothy");
+    expect(container.textContent).toContain("Maple");
     expect(container.textContent).toContain("Managed tunnel");
     act(() => button("Back to account").click());
     expect(container.textContent).toContain("kyle@example.test");
@@ -236,7 +236,7 @@ describe("email-account linked computer management", () => {
         (action) => action.text === "Deregister",
       );
       await act(async () => approve?.onPress?.());
-      expect(container.textContent).toContain("Dorothy");
+      expect(container.textContent).toContain("Maple");
       expect(harness.alert).toHaveBeenLastCalledWith(
         "Could not deregister server",
         "Account service unavailable",

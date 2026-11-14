@@ -55,7 +55,7 @@ describe("Library operation recovery", () => {
       },
     };
     const submitted = JSON.stringify({
-      host: "dorothy",
+      host: "maple",
       requestId: "one",
       projectId: "loom",
       copyId: "prepared",

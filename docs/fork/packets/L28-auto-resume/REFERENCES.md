@@ -9,29 +9,29 @@ Treat external repositories as references, not code to copy.
 ## Old Loom
 
 F7 in [selections.md](../../selections.md), first listed as not selected; confirmed for this
-packet on 2026-09-24. Old Loom (`bagelvault/loom` 0.13.10):
+packet on 2026-09-24. Old Loom (the old private Loom repository 0.13.10):
 
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/orchestration/Layers/ProviderLimitResumeWorker.ts
+- `apps/server/src/orchestration/Layers/ProviderLimitResumeWorker.ts`
   (250 lines). Adapt: the claim-then-act structure (a row moves to an in-progress state in
   the same transaction that reads it) so a restart cannot resume twice. Drop: the 5 second
   polling loop with 60 second leases renewed every 20 seconds; one server process owns the
   table, so a sleeping fiber woken on change is enough.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/orchestration/Layers/ProviderLimitResume.ts
+- `apps/server/src/orchestration/Layers/ProviderLimitResume.ts`
   (433 lines). Keep: idempotent upsert that ignores a delayed older event, and the backoff
   idea (old: 5 s doubling to 15 minutes). Drop: `lifecycle_generation` hashing and lease
   columns.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/orchestration/providerLimitClassification.ts
+- `apps/server/src/orchestration/providerLimitClassification.ts`
   (83 lines). Adapt: reading reset hints from nested detail keys (`resetsAt`,
   `retry_after`, epoch seconds below 1e10). Drop: the broad regex
   (`/(?:usage|rate|account|token|request)\s*(?:limit|quota)|...|\b429\b|limit reached/i`),
   which matches unrelated errors and misses "rate-limited".
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/persistence/Migrations/224_OrchestrationEstate.ts
+- `apps/server/src/persistence/Migrations/224_OrchestrationEstate.ts`
   (lines 173-199, table `orchestration_provider_limit_resumes`). Adapt: one row per thread,
   index on `(state, resume_at)`. Drop: the table's place in upstream's migration sequence.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/provider/Layers/ProviderRuntimeRecovery.ts
+- `apps/server/src/provider/Layers/ProviderRuntimeRecovery.ts`
   (lines 318-358: resumed through `providerService.resumeThread` with the stored cursor,
   and failed when no active turn was restored) and
-  https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+  `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`
   (lines 2845-2880 detection hook, 3453-3478 holding back the failed state). Drop: both need
   seams in upstream's ingestion; this packet starts a new turn instead.
 - Old Loom had no user-facing toggle, countdown or cancel for pending resumes, and no account

@@ -54,7 +54,7 @@ export const PreviewLinkPort = Schema.Int.check(Schema.isBetween({ minimum: 1, m
 
 export const PreviewLinksSettings = Schema.Struct({
   enabled: Schema.Boolean,
-  /** Registrable domain whose wildcard points at this computer's tunnel, such as `bagels.top`. */
+  /** Registrable domain whose wildcard points at this computer's tunnel, such as `example.net`. */
   suffix: Schema.NullOr(PreviewLinkSuffix),
   machine: PreviewMachineName,
   defaultLifetime: PreviewLinkLifetime,
@@ -93,7 +93,7 @@ export const PreviewLink = Schema.Struct({
   id: Schema.String,
   kind: Schema.Literal("port"),
   port: PreviewLinkPort,
-  /** `5173-k3f9x2-dorothy.bagels.top`; a fresh share segment per link, kept on restore. */
+  /** `5173-k3f9x2-maple.example.net`; a fresh share segment per link, kept on restore. */
   host: Schema.String,
   /** Canonical `https://<host>/`. It opens only in a browser that entered from Loom. */
   url: Schema.String,
@@ -272,13 +272,13 @@ export type LibraryPreviewRegisterRequest = typeof LibraryPreviewRegisterRequest
 
 /** What a computer needs to send cold browsers to the Library and check what comes back. */
 export const LibraryPreviewAccess = Schema.Struct({
-  /** The Library's public origin and ticket issuer, such as `https://loom.begam.in`. */
+  /** The Library's public origin and ticket issuer, such as `https://loom.example.com`. */
   origin: Schema.String.check(Schema.isMaxLength(2048)),
   ticketPath: Schema.String.check(Schema.isMaxLength(256)),
   keyId: Schema.String.check(Schema.isMaxLength(64)),
   /** Raw Ed25519 public key, base64url. */
   publicKey: Schema.String.check(Schema.isMaxLength(64)),
-  /** Set when the Library serves published pages, such as `https://pages.bagels.top`. */
+  /** Set when the Library serves published pages, such as `https://pages.example.net`. */
   pagesOrigin: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
 });
 export type LibraryPreviewAccess = typeof LibraryPreviewAccess.Type;

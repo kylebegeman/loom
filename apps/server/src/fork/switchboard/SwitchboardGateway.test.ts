@@ -121,7 +121,7 @@ const fixture = Effect.gen(function* () {
   ) =>
     gateway.forward(
       HttpServerRequest.fromWeb(
-        new Request("https://computer.loomhost.dev/api/loom/switchboard" + path, {
+        new Request("https://computer.example.org/api/loom/switchboard" + path, {
           method,
           headers: {
             ...(credential === null ? {} : { authorization: "Bearer " + credential }),

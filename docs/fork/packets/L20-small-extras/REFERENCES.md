@@ -9,42 +9,42 @@ Selection F23 ("Small extras").
 Part A was retired on 2026-10-09 (upstream has a branch prefix setting per project). These
 entries are kept as prior art only.
 
-- Ledger [1362](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/1362-port-configurable-worktree-prefixes-and-codex-runtime-identity.md):
+- Ledger `1362`:
   ported from upstream PRs #3948 and #3954, bundled with an unrelated Codex change; 44 files.
-- [settings.ts](https://github.com/bagelvault/loom/blob/a79ec506/packages/contracts/src/settings.ts)
+- `settings.ts`
   lines 422-427: `DEFAULT_WORKTREE_BRANCH_PREFIX = "loom"` and the `WorktreeBranchPrefix`
   validation regex. **Keep** the regex.
-- [git.ts](https://github.com/bagelvault/loom/blob/a79ec506/packages/shared/src/git.ts)
+- `git.ts`
   lines 47-210: prefix normalization, temporary-branch extraction with persisted provenance,
   generated names. **Drop**: the provenance column (migration
   `161_TemporaryWorktreeBranchProvenance`) and its threading through decider, projector and
   snapshot queries is the bulk of the 44 files.
-- [ThreadsSettingsPanel.tsx](https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/settings/ThreadsSettingsPanel.tsx)
+- `ThreadsSettingsPanel.tsx`
   lines 152-170: settings row with normalize-on-commit and reset. **Adapt** the UX.
 
 ### Container logs
 
-- [ContainerLogTail.ts](https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/containerLogs/Layers/ContainerLogTail.ts)
-  (341 lines) and [ContainerLogsSurface.tsx](https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/code/ContainerLogsSurface.tsx):
+- `ContainerLogTail.ts`
+  (341 lines) and `ContainerLogsSurface.tsx`:
   **Drop.** It read a `container_log_lines` table that nothing in production wrote
   (`appendLines` had only test callers) and was scoped to old Loom's sandbox runs; it never
   called `docker logs`.
-- [DockerStackManager.ts](https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/previewDevEnvironment/Layers/DockerStackManager.ts)
+- `DockerStackManager.ts`
   lines 119-159 and 276-293: the only real Docker CLI use,
   `docker compose -f <file> -p <name> ps --format json` with array-or-NDJSON parsing and
   State/Health mapping. **Adapt** the tolerant parser idea.
 
 ### CLI tool registry
 
-- [CliToolRegistry.ts](https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/cliTools/Layers/CliToolRegistry.ts)
+- `CliToolRegistry.ts`
   (4220 lines): catalog `builtInCliTools` at lines 1023-2111 (node, jq, pandoc, libreoffice,
   ffmpeg, imagemagick, pdftotext, sqlite3, playwright, curl, mermaid, archives, ripgrep, IDE
   bridges), probe at 2340-2460 (5 second timeout, scrubbed env, 64 KB cap),
   `extractVersion` at 556-565. **Keep** the declarative catalog shape and version extraction.
   **Drop** sandboxed execution, risk policies, approvals, run receipts, tool packs, the four
   tables (`cli_tool_*`). It never looked up latest versions.
-- [cliTools.ts](https://github.com/bagelvault/loom/blob/a79ec506/packages/contracts/src/cliTools.ts)
-  (766 lines) and [CliToolsSettings.tsx](https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/settings/CliToolsSettings.tsx)
+- `cliTools.ts`
+  (766 lines) and `CliToolsSettings.tsx`
   (682 lines): reference only.
 - Ledger entries 0551, 0553, 0555, 0557, 0562 (`.ledger/entries/05xx-*.md` in the old
   repository): the registry's history.

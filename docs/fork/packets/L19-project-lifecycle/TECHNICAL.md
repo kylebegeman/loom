@@ -222,7 +222,7 @@ release behavior on 2026-10-08 (see PRODUCT).
   is ever signalled because of its name, and the server, its ancestors and pids 0 and 1 are
   never signalled.
 - **Container runtimes.** With Docker Desktop, OrbStack or rootless Podman, the listener on a
-  container's published port is the runtime's forwarder (`com.docker.backend` on Dorothy), and
+  container's published port is the runtime's forwarder (`com.docker.backend` on Maple), and
   stopping it takes every container on the computer down. A listener on a port any running
   container publishes, or whose command is a known forwarder, is never listed as a lease or
   stopped, and neither are its children. Names only ever spare a process. Adoption and

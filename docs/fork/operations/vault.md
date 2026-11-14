@@ -582,7 +582,7 @@ This procedure is a handoff, not a completed deployment. Run it only in a separa
 production rollout. Never start an implementation/test process against `~/.t3/userdata`.
 No Library deployment is required for the implemented environment-local Vault services.
 
-1. Allocate the OpenBao service host and HTTPS origin under the existing begam.in/platform
+1. Allocate the OpenBao service host and HTTPS origin under the existing platform
    operating conventions. Supply the hostname and TLS certificate paths explicitly. Use a
    dedicated OS service identity and persistent Raft directory with mode 0700. Install the
    official OpenBao 2.7.1 binary after verifying its published checksum. Keep it pinned with
@@ -1003,22 +1003,22 @@ stopped run; do not sweep other instances' temporary files.
 
 ## Dedicated Migadu test mailbox handoff
 
-Kyle confirmed that `vault@begam.in` exists in Migadu and is dedicated to Vault tests. Live
+Kyle confirmed that `vault@example.com` exists in Migadu and is dedicated to Vault tests. Live
 reader setup and message acceptance are not yet configured. Runtime session
 provisioning above does not send verification email; email tests will be a separate adapter proof.
 No VPS or Library deployment is needed for the local target.
 
 The mail owner can prepare the following in the existing Migadu dashboard:
 
-1. Preserve the existing dedicated `vault@begam.in` mailbox. No mailbox creation is needed.
+1. Preserve the existing dedicated `vault@example.com` mailbox. No mailbox creation is needed.
 2. Create a custom-password identity for the test reader, scoped to that mailbox, with IMAP
-   access enabled. The gated contract expects the proposed login `vault-reader@begam.in`; its
+   access enabled. The gated contract expects the proposed login `vault-reader@example.com`; its
    creation and access have not been verified. Disable sending, POP and ManageSieve for that identity. Keep the organization
    API key and the mailbox administrator password outside worker access.
-3. Verify a harmless message to `vault+loom-<run-id>@begam.in` arrives in that mailbox. Migadu
+3. Verify a harmless message to `vault+loom-<run-id>@example.com` arrives in that mailbox. Migadu
    supports plus addressing without creating aliases for each run and normally sorts each tag
    into an auto-created `loom-<run-id>` folder, rather than Inbox. A domain Pattern Rewrite
-   `vault+*@begam.in => vault@begam.in` can route it to Inbox instead; the mail owner must review
+   `vault+*@example.com => vault@example.com` can route it to Inbox instead; the mail owner must review
    that rule before changing it. Do not add catch-all routing,
    forward personal mail or change working DNS for this check.
 4. Until L79's production backend, controls and audit path are explicitly approved by the host

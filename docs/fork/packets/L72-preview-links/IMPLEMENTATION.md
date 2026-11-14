@@ -60,7 +60,7 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
   Library lands on the app.
 - Ending, expiring and restoring a link behave as [PRODUCT.md](./PRODUCT.md) says, including
   live WebSockets closing on end.
-- An agent publishes a page that opens at `pages.bagels.top` from another device, and a reply
+- An agent publishes a page that opens at `pages.example.net` from another device, and a reply
   sent under it arrives in the publishing thread, including one sent while the computer was
   off.
 - An agent's folder and container links open, and end with the lane.

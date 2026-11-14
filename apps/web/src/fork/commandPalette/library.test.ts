@@ -39,7 +39,7 @@ const project = (patch: Partial<LibraryProject>): LibraryProject => ({
 const summary = (patch: Partial<LibraryThreadSummary>): LibraryThreadSummary => ({
   id: "summary",
   projectId: "project",
-  environmentId: EnvironmentId.make("dorothy"),
+  environmentId: EnvironmentId.make("maple"),
   threadId: ThreadId.make("thread"),
   localProjectId: ProjectId.make("local"),
   workingCopyId: null,

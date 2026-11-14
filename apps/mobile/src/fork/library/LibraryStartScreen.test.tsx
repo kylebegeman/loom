@@ -56,7 +56,7 @@ const state = vi.hoisted(() => ({
   executeOperation: Object.assign(vi.fn(), { permissionAtom: () => true }),
   inspectFolder: Object.assign(vi.fn(), { permissionAtom: () => true }),
   placement: null as { action: string; rootPath: string; ownership: string; reason: string } | null,
-  pickedFolder: "/Users/kyle/Projects/chosen",
+  pickedFolder: "/Users/me/Projects/chosen",
   create: vi.fn(),
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
@@ -1352,7 +1352,7 @@ describe("portable project files on mobile", () => {
     };
     state.placement = {
       action: "reuse-existing",
-      rootPath: "/Users/kyle/Developer/active/loom",
+      rootPath: "/Users/me/Developer/active/loom",
       ownership: "borrowed",
       reason: "Existing checkout",
     };
@@ -1361,7 +1361,7 @@ describe("portable project files on mobile", () => {
     await render();
     await click("Files");
     expect(container.textContent).toContain(LIBRARY_RESTORE_FOLDER_LINE);
-    expect(container.textContent).not.toContain("/Users/kyle/Developer/active/loom");
+    expect(container.textContent).not.toContain("/Users/me/Developer/active/loom");
     await click("Start work");
     expect(state.restore).toHaveBeenCalledOnce();
     expect(state.restore.mock.calls[0]![0].input).not.toHaveProperty("rootPath");
@@ -1551,7 +1551,7 @@ describe("Library starts on computers that choose folders", () => {
     };
     state.placement = {
       action: "clone",
-      rootPath: "/Users/kyle/Projects/loom-2",
+      rootPath: "/Users/me/Projects/loom-2",
       ownership: "managed",
       reason: "New folder in Projects",
     };
@@ -1559,9 +1559,7 @@ describe("Library starts on computers that choose folders", () => {
     params = { ...params, reuseEnvironmentId: computerA };
     await render();
     await click("Files");
-    expect(container.textContent).toContain(
-      "Loom will put the files in /Users/kyle/Projects/loom-2",
-    );
+    expect(container.textContent).toContain("Loom will put the files in /Users/me/Projects/loom-2");
     expect(
       container.querySelector(
         "[aria-label='Choose Folder for new files'], [aria-label='Choose Project folder']",
@@ -1586,7 +1584,7 @@ describe("Library starts on computers that choose folders", () => {
     };
     state.placement = {
       action: "use",
-      rootPath: "/Users/kyle/Projects/loom",
+      rootPath: "/Users/me/Projects/loom",
       ownership: "managed",
       reason: "Library copy",
     };

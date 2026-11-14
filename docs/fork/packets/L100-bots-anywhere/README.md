@@ -3,10 +3,10 @@
 Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
 from this plan.
 
-Library bots. Kyle shares a bot to the Loom Library (loom.begam.in) once, and every computer
+Library bots. Kyle shares a bot to the Loom Library (loom.example.com) once, and every computer
 enrolled in that Library gets it, with edits flowing through the Library. A run, a batch or a
-pipeline step can then run on a chosen computer: Dorothy, a Mini worker that runs a Loom server,
-or the VPS. "Run a batch of 50 on the Mini while Dorothy stays responsive." Before a run is sent,
+pipeline step can then run on a chosen computer: Maple, a Mini worker that runs a Loom server,
+or the VPS. "Run a batch of 50 on the Mini while Maple stays responsive." Before a run is sent,
 the target's readiness is shown: online, provider signed in, project copy present, required tools
 (L73), and Vault slots bound to that computer's own Vault items (L74). Secrets are never copied
 between computers.

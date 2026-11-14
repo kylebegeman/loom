@@ -36,8 +36,8 @@ const response = (value: unknown) => new Response(JSON.stringify(value), { statu
 describe("native library identity", () => {
   it("requests Pocket ID custom API access with the RFC 8707 resource parameter", () => {
     expect(
-      libraryIdentityResourceParameters({ ...metadata, resource: "https://loom.begam.in" }),
-    ).toEqual({ resource: "https://loom.begam.in" });
+      libraryIdentityResourceParameters({ ...metadata, resource: "https://loom.example.org" }),
+    ).toEqual({ resource: "https://loom.example.org" });
     expect(libraryIdentityResourceParameters(metadata)).toEqual({});
   });
   it("uses the explicitly entered address and verifies the saved destination", async () => {

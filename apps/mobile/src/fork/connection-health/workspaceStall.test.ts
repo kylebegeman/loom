@@ -47,29 +47,29 @@ function workspace(connectingEnvironments: ReadonlyArray<WorkspaceEnvironment>):
 
 describe("stalled workspace connection status", () => {
   it("keeps showing progress through the first minute of a reconnect", () => {
-    const state = workspace([reconnecting("Dorothy")]);
+    const state = workspace([reconnecting("Maple")]);
     expect(
       workspaceConnectionStatusPresentation(state, { compact: false, now: STALLED - 1 }),
-    ).toMatchObject({ label: "Reconnecting to Dorothy", showsProgress: true });
+    ).toMatchObject({ label: "Reconnecting to Maple", showsProgress: true });
     expect(nextWorkspaceStallAt(state, STALLED - 1)).toBe(STALLED);
   });
 
   it("stops the spinner and says since when once the reconnect has stalled", () => {
-    const state = workspace([reconnecting("Dorothy")]);
+    const state = workspace([reconnecting("Maple")]);
     expect(workspaceConnectionStatusPresentation(state, { compact: false, now: STALLED })).toEqual({
-      label: `Can't reach Dorothy since ${since}`,
+      label: `Can't reach Maple since ${since}`,
       showsProgress: false,
     });
     expect(workspaceConnectionStatusPresentation(state, { compact: true, now: STALLED })).toEqual({
-      label: "Can't reach Dorothy",
-      accessibilityLabel: `Can't reach Dorothy since ${since}. Loom keeps trying.`,
+      label: "Can't reach Maple",
+      accessibilityLabel: `Can't reach Maple since ${since}. Loom keeps trying.`,
       showsProgress: false,
     });
     expect(nextWorkspaceStallAt(state, STALLED)).toBeNull();
   });
 
   it("keeps progress while any reconnecting computer is still within the window", () => {
-    const state = workspace([reconnecting("Dorothy"), reconnecting("Book", STALLED)]);
+    const state = workspace([reconnecting("Maple"), reconnecting("Book", STALLED)]);
     expect(
       workspaceConnectionStatusPresentation(state, { compact: true, now: STALLED }),
     ).toMatchObject({ label: "2 reconnecting", showsProgress: true });
@@ -83,7 +83,7 @@ describe("stalled workspace connection status", () => {
   });
 
   it("lets this device being offline speak first", () => {
-    const state = { ...workspace([reconnecting("Dorothy")]), networkStatus: "offline" as const };
+    const state = { ...workspace([reconnecting("Maple")]), networkStatus: "offline" as const };
     expect(
       workspaceConnectionStatusPresentation(state, { compact: false, now: STALLED }),
     ).toMatchObject({ label: "You are offline", showsProgress: false });

@@ -10,12 +10,12 @@ vi.mock("./LibraryFolderPalette", () => ({}));
 vi.mock("./NewConversationDialog", () => ({}));
 import { conversationAutoStart } from "./ConversationPalette";
 
-const dorothy = EnvironmentId.make("dorothy");
+const maple = EnvironmentId.make("maple");
 const copy: LibraryWorkingCopy = {
   id: "files",
   projectId: "project",
   projectRevision: 1,
-  environmentId: dorothy,
+  environmentId: maple,
   rootPath: "/work/app",
   repositories: [],
   ownership: "borrowed",
@@ -24,7 +24,7 @@ const copy: LibraryWorkingCopy = {
   updatedAt: "2026-10-01T00:00:00.000Z",
 };
 const launch = {
-  environmentId: dorothy,
+  environmentId: maple,
   workingCopyId: copy.id,
   modelSelection: {
     instanceId: ProviderInstanceId.make("codex"),
@@ -39,7 +39,7 @@ const ready: Parameters<typeof conversationAutoStart>[0] = {
   locked: false,
   error: null,
   existingFolder: null,
-  hostId: dorothy,
+  hostId: maple,
   canCreate: true,
   blocker: null,
   warning: null,

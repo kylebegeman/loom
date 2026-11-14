@@ -127,11 +127,11 @@ it("rejects results from an earlier query while accepting case and accent foldin
 it("names an unavailable computer once without conflating its scoped results", () => {
   expect(
     unavailableSearchComputerLabels([
-      { label: "Dorothy" },
-      { label: "Dorothy" },
+      { label: "Maple" },
+      { label: "Maple" },
       { label: "Mac mini" },
     ]),
-  ).toBe("Dorothy, Mac mini");
+  ).toBe("Maple, Mac mini");
   expect(
     rankGlobalSearchItems([thread("one", "Same"), thread("two", "Same")], "same"),
   ).toHaveLength(2);

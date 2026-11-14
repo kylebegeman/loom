@@ -56,7 +56,7 @@ export function defaultPreviewGatewayPort(devServerPort: number | null): number 
   return above <= 65535 ? above : devServerPort - DEV_GATEWAY_PORT_OFFSET;
 }
 
-/** `Dorothy.local` becomes `dorothy`. Falls back to `loom` when nothing usable is left. */
+/** `Maple.local` becomes `maple`. Falls back to `loom` when nothing usable is left. */
 export function previewMachineSlug(hostname: string): string {
   const first = hostname.trim().toLowerCase().split(".")[0] ?? "";
   const slug = first.replace(/[^a-z0-9]/g, "").slice(0, 40);

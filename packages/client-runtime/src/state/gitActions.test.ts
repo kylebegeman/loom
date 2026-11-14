@@ -147,10 +147,10 @@ describe("Git recovery", () => {
   });
   it("labels a silent push after twenty seconds and clears it for output or a running hook", () => {
     const pushing = { phase: "push", hookName: null, phaseStartedAtMs: 0, lastProgressAtMs: 1_000 };
-    expect(gitWaitingLabel(pushing, 20_999, "Dorothy")).toBeNull();
-    expect(gitWaitingLabel(pushing, 21_000, "Dorothy")).toContain("SSH key approval on Dorothy");
-    expect(gitWaitingLabel({ ...pushing, lastProgressAtMs: 20_000 }, 21_000, "Dorothy")).toBeNull();
-    expect(gitWaitingLabel({ ...pushing, hookName: "pre-push" }, 80_000, "Dorothy")).toBeNull();
-    expect(gitWaitingLabel({ ...pushing, phase: "commit" }, 80_000, "Dorothy")).toBeNull();
+    expect(gitWaitingLabel(pushing, 20_999, "Maple")).toBeNull();
+    expect(gitWaitingLabel(pushing, 21_000, "Maple")).toContain("SSH key approval on Maple");
+    expect(gitWaitingLabel({ ...pushing, lastProgressAtMs: 20_000 }, 21_000, "Maple")).toBeNull();
+    expect(gitWaitingLabel({ ...pushing, hookName: "pre-push" }, 80_000, "Maple")).toBeNull();
+    expect(gitWaitingLabel({ ...pushing, phase: "commit" }, 80_000, "Maple")).toBeNull();
   });
 });

@@ -26,7 +26,7 @@ describe("Connect authentication surface", () => {
     for (const currentUrl of [
       "http://localhost:5733",
       "http://127.0.0.1:3773",
-      "https://dorothy.tailnet.ts.net",
+      "https://maple.tailnet.ts.net",
       "http://app.t3.codes",
       "https://app.t3.codes.evil.test",
       "https://evil-t3.codes",

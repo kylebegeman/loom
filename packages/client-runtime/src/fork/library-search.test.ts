@@ -13,7 +13,7 @@ import {
 const hit = (itemId: string, id = "conv-1"): LibrarySearchHit => ({
   id,
   projectId: "loom",
-  environmentId: EnvironmentId.make("dorothy"),
+  environmentId: EnvironmentId.make("maple"),
   threadId: ThreadId.make("thread-1"),
   title: "Fix login",
   archived: false,

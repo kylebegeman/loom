@@ -81,7 +81,7 @@ function useDirectoryHealthText(
 
 export interface ComputerConnectionHealth {
   readonly label: string;
-  /** "Can't reach Dorothy since 3:04 PM", once a reconnect has failed past the stall window. */
+  /** "Can't reach Maple since 3:04 PM", once a reconnect has failed past the stall window. */
   readonly stallTitle: string | null;
   readonly signIn: (() => void) | null;
   /** What the Library's directory last heard from the computer, read while it is stalled. */

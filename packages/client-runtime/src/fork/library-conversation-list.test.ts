@@ -7,8 +7,8 @@ import {
   sortConversations,
 } from "./library-conversation-list.ts";
 
-const dorothy = EnvironmentId.make("dorothy");
-const nora = EnvironmentId.make("nora");
+const maple = EnvironmentId.make("maple");
+const juniper = EnvironmentId.make("juniper");
 const project: LibraryProject = {
   id: "project",
   title: "Presence",
@@ -31,7 +31,7 @@ const project: LibraryProject = {
 const thread = (patch: Partial<LibraryThreadSummary>): LibraryThreadSummary => ({
   id: "summary",
   projectId: "project",
-  environmentId: dorothy,
+  environmentId: maple,
   threadId: ThreadId.make("thread"),
   localProjectId: ProjectId.make("local"),
   workingCopyId: null,
@@ -55,7 +55,7 @@ const collector = thread({
 const pricing = thread({
   id: "pricing",
   title: "draft the pricing page",
-  environmentId: nora,
+  environmentId: juniper,
   resourceIds: ["app"],
   createdAt: "2026-10-05T00:00:00.000Z",
   updatedAt: "2026-10-06T00:00:00.000Z",
@@ -67,7 +67,7 @@ const untitled = thread({
   updatedAt: "2026-10-08T00:00:00.000Z",
 });
 const threads = [collector, pricing, untitled];
-const label = (id: EnvironmentId) => (id === nora ? "Nora" : "Dorothy");
+const label = (id: EnvironmentId) => (id === juniper ? "Juniper" : "Maple");
 const ids = (list: readonly LibraryThreadSummary[]) => list.map((entry) => entry.id);
 const none = { search: "", computer: null, resourceId: null };
 
@@ -76,9 +76,9 @@ describe("filterConversations", () => {
     expect(
       ids(filterConversations(threads, project, { ...none, search: "TIMELINE" }, label)),
     ).toEqual(["collector"]);
-    expect(ids(filterConversations(threads, project, { ...none, search: "nora" }, label))).toEqual([
-      "pricing",
-    ]);
+    expect(
+      ids(filterConversations(threads, project, { ...none, search: "juniper" }, label)),
+    ).toEqual(["pricing"]);
     expect(
       ids(filterConversations(threads, project, { ...none, search: "presence-app" }, label)),
     ).toEqual(["pricing"]);
@@ -88,9 +88,9 @@ describe("filterConversations", () => {
   });
 
   it("narrows to one computer or one repository", () => {
-    expect(
-      ids(filterConversations(threads, project, { ...none, computer: dorothy }, label)),
-    ).toEqual(["collector", "untitled"]);
+    expect(ids(filterConversations(threads, project, { ...none, computer: maple }, label))).toEqual(
+      ["collector", "untitled"],
+    );
     expect(
       ids(filterConversations(threads, project, { ...none, resourceId: "app" }, label)),
     ).toEqual(["pricing"]);

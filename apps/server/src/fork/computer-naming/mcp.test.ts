@@ -18,7 +18,7 @@ const decodeToolInput = Schema.decodeUnknownEffect(McpSchema.ToolJson);
 it.effect("exports computer names through MCP and refuses read-only writes before mutation", () =>
   Effect.gen(function* () {
     let renamed = false;
-    const state = { name: null, label: "Dorothy", defaultLabel: "Dorothy" };
+    const state = { name: null, label: "Maple", defaultLabel: "Maple" };
     const service = ComputerNaming.ComputerNaming.of({
       current: Effect.succeed(state),
       changes: Stream.make(state),

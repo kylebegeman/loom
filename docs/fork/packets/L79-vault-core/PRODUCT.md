@@ -6,7 +6,7 @@ Create the shared home for development credentials and extensible secure records
 
 ## How it works
 
-Provide authenticated metadata and encrypted versioned payload storage behind a backend adapter. Host the authority alongside the begam.in/Loom platform on the VPS if that deployment is selected. Separate human platform identity, machine enrollment, storage-key custody and workload grants.
+Provide authenticated metadata and encrypted versioned payload storage behind a backend adapter. Host the authority alongside the example.com/Loom platform on the VPS if that deployment is selected. Separate human platform identity, machine enrollment, storage-key custody and workload grants.
 
 ## User experience
 

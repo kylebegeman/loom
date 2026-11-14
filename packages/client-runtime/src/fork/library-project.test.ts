@@ -13,12 +13,12 @@ import {
   libraryProjectInitials,
 } from "./library-project.ts";
 
-const dorothy = EnvironmentId.make("dorothy");
+const maple = EnvironmentId.make("maple");
 const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
   id: "copy",
   projectId: "project",
   projectRevision: 1,
-  environmentId: dorothy,
+  environmentId: maple,
   rootPath: "/work/aspectavy",
   repositories: [],
   ownership: "managed",
@@ -91,9 +91,9 @@ describe("libraryResourceFromInput", () => {
         },
       ],
     });
-    const label = (id: EnvironmentId) => (id === dorothy ? "Dorothy" : "Mini");
+    const label = (id: EnvironmentId) => (id === maple ? "Maple" : "Mini");
     expect(libraryRootMoveWarning([first], web, [held], label)).toBe(
-      "This moves corbelo into corbelo/. The copy on Dorothy keeps it at its folder root, so Loom prepares a new copy for work on this project there.",
+      "This moves corbelo into corbelo/. The copy on Maple keeps it at its folder root, so Loom prepares a new copy for work on this project there.",
     );
     expect(
       libraryRootMoveWarning(
@@ -102,7 +102,7 @@ describe("libraryResourceFromInput", () => {
         [held, { ...held, id: "mini", environmentId: EnvironmentId.make("mini") }],
         label,
       ),
-    ).toContain("The copies on Dorothy and Mini keep it at their folder root");
+    ).toContain("The copies on Maple and Mini keep it at their folder root");
     expect(libraryRootMoveWarning([first], link, [held], label)).toBeNull();
     expect(
       libraryRootMoveWarning([first], web, [{ ...held, state: "released" }], label),
@@ -196,16 +196,16 @@ describe("libraryProjectInitials", () => {
 
 describe("libraryPathParts", () => {
   it("leads with the folder name and shortens home directories", () => {
-    expect(libraryPathParts("/Users/kyle/Developer/active/loom")).toEqual({
+    expect(libraryPathParts("/Users/me/Developer/active/loom")).toEqual({
       parent: "~/Developer/active/",
       name: "loom",
     });
-    expect(libraryPathParts("/home/kyle/src/app/")).toEqual({ parent: "~/src/", name: "app" });
+    expect(libraryPathParts("/home/me/src/app/")).toEqual({ parent: "~/src/", name: "app" });
     expect(libraryPathParts("C:\\Users\\kyle\\code\\loom")).toEqual({
       parent: "~\\code\\",
       name: "loom",
     });
     expect(libraryPathParts("/srv/loom")).toEqual({ parent: "/srv/", name: "loom" });
-    expect(libraryPathParts("/Users/kyle")).toEqual({ parent: "", name: "~" });
+    expect(libraryPathParts("/Users/me")).toEqual({ parent: "", name: "~" });
   });
 });

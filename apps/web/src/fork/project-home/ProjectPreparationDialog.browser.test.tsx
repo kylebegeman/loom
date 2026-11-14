@@ -14,8 +14,8 @@ const { state, command, computers } = vi.hoisted(() => {
     connection: { phase: "connected" },
     serverConfig: {
       ...(serverChosenFolders ? { serverChosenFolders: true } : {}),
-      newProjectsRoot: "/Users/kyle/Projects",
-      folders: { projects: "/Users/kyle/Projects" },
+      newProjectsRoot: "/Users/me/Projects",
+      folders: { projects: "/Users/me/Projects" },
       environment: { capabilities: { supportsExecution: true, projectCloneTracking: true } },
     },
   });
@@ -122,7 +122,7 @@ vi.mock("../project-library/LibraryFolderPalette", async (original) => {
 import { ProjectPreparationDialog } from "./ProjectPreparationDialog";
 
 const sourceProject = {
-  environmentId: EnvironmentId.make("dorothy"),
+  environmentId: EnvironmentId.make("maple"),
   id: ProjectId.make("corbelo"),
   title: "corbelo",
 } as EnvironmentProject;
@@ -148,8 +148,8 @@ function setup({
 
 it("lets a computer that chooses folders take a folder picked without typing", async () => {
   setup({
-    browsed: { path: "/Users/kyle/Code", repository: false, entries: ["notes"] },
-    destinationPath: "/Users/kyle/Code/corbelo",
+    browsed: { path: "/Users/me/Code", repository: false, entries: ["notes"] },
+    destinationPath: "/Users/me/Code/corbelo",
   });
   await using _screen = await render(
     <ProjectPreparationDialog
@@ -165,17 +165,17 @@ it("lets a computer that chooses folders take a folder picked without typing", a
     .not.toBeInTheDocument();
   await userEvent.click(page.getByRole("button", { name: "Download into a new folder here" }));
   await expect
-    .element(page.getByText("Loom will put the files in /Users/kyle/Code/corbelo"))
+    .element(page.getByText("Loom will put the files in /Users/me/Code/corbelo"))
     .toBeVisible();
 
   await userEvent.click(page.getByRole("button", { name: "Prepare on Mini" }));
   await vi.waitFor(() => expect(state.start).toHaveBeenCalledOnce());
-  expect(state.start.mock.calls[0]![0].input.destinationPath).toBe("/Users/kyle/Code/corbelo");
+  expect(state.start.mock.calls[0]![0].input.destinationPath).toBe("/Users/me/Code/corbelo");
 });
 
 it("goes back to the computer's own folder after a picked one", async () => {
   setup({
-    browsed: { path: "/Users/kyle/Empty", repository: false, entries: [] },
+    browsed: { path: "/Users/me/Empty", repository: false, entries: [] },
     destinationPath: "",
   });
   await using _screen = await render(
@@ -188,9 +188,7 @@ it("goes back to the computer's own folder after a picked one", async () => {
   );
   await userEvent.click(page.getByRole("button", { name: "Choose another folder" }));
   await userEvent.click(page.getByRole("button", { name: "Download into this folder" }));
-  await expect
-    .element(page.getByText("Loom will put the files in /Users/kyle/Empty"))
-    .toBeVisible();
+  await expect.element(page.getByText("Loom will put the files in /Users/me/Empty")).toBeVisible();
   await userEvent.click(page.getByRole("button", { name: "Let Loom choose the folder" }));
 
   await userEvent.click(page.getByRole("button", { name: "Prepare on Mini" }));
@@ -200,8 +198,8 @@ it("goes back to the computer's own folder after a picked one", async () => {
 
 it("sends the folder chosen by browsing to a computer that needs one", async () => {
   setup({
-    browsed: { path: "/Users/kyle/Code/corbelo-next", repository: false, entries: [] },
-    destinationPath: "/Users/kyle/Code/corbelo-next",
+    browsed: { path: "/Users/me/Code/corbelo-next", repository: false, entries: [] },
+    destinationPath: "/Users/me/Code/corbelo-next",
     computer: computers.legacy,
   });
   await using _screen = await render(
@@ -212,12 +210,12 @@ it("sends the folder chosen by browsing to a computer that needs one", async () 
       onClose={() => undefined}
     />,
   );
-  await expect.element(page.getByText("/Users/kyle/Projects/corbelo")).toBeVisible();
+  await expect.element(page.getByText("/Users/me/Projects/corbelo")).toBeVisible();
   await userEvent.click(page.getByRole("button", { name: "Choose Destination folder" }));
   await userEvent.click(page.getByRole("button", { name: "Use this folder" }));
-  await expect.element(page.getByText("/Users/kyle/Code/corbelo-next")).toBeVisible();
+  await expect.element(page.getByText("/Users/me/Code/corbelo-next")).toBeVisible();
 
   await userEvent.click(page.getByRole("button", { name: "Prepare on Mini" }));
   await vi.waitFor(() => expect(state.start).toHaveBeenCalledOnce());
-  expect(state.start.mock.calls[0]![0].input.destinationPath).toBe("/Users/kyle/Code/corbelo-next");
+  expect(state.start.mock.calls[0]![0].input.destinationPath).toBe("/Users/me/Code/corbelo-next");
 });

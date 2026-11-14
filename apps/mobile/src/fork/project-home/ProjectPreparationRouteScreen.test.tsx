@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   review: vi.fn(),
   save: vi.fn(),
   navigate: vi.fn(),
-  pickedFolder: "/Users/kyle/Code/corbelo",
+  pickedFolder: "/Users/me/Code/corbelo",
 }));
 const computer = (environmentId: string, label: string) => ({
   environmentId,
@@ -82,19 +82,19 @@ vi.mock("./useProjectPreparationReceipt", () => ({
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "new-project" }));
 vi.mock("../../state/entities", () => ({
-  useProject: () => ({ environmentId: "dorothy", id: "corbelo", title: "corbelo" }),
+  useProject: () => ({ environmentId: "maple", id: "corbelo", title: "corbelo" }),
   useProjects: () => [],
   useServerConfigs: () =>
     new Map([
       [
-        "dorothy",
+        "maple",
         { environment: { capabilities: { loomFeatures: ["project-checkout-management"] } } },
       ],
       [
         "mini",
         {
           serverChosenFolders: true,
-          newProjectsRoot: "/Users/kyle/Projects",
+          newProjectsRoot: "/Users/me/Projects",
           environment: { capabilities: { projectCloneTracking: true } },
         },
       ],
@@ -103,7 +103,7 @@ vi.mock("../../state/entities", () => ({
 }));
 vi.mock("../../state/environments", () => ({
   useEnvironments: () => ({
-    environments: [computer("dorothy", "Dorothy"), computer("mini", "Mini")],
+    environments: [computer("maple", "Maple"), computer("mini", "Mini")],
   }),
 }));
 vi.mock("../../state/atom-registry", () => ({
@@ -114,7 +114,7 @@ vi.mock("../../state/presentation", () => ({
 }));
 vi.mock("../../state/session", () => ({
   readEnvironmentScope: () => true,
-  useEnvironmentsWithScope: () => new Set(["dorothy", "mini"]),
+  useEnvironmentsWithScope: () => new Set(["maple", "mini"]),
 }));
 vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: { startProjectClone: "startProjectClone" },
@@ -166,7 +166,7 @@ beforeEach(async () => {
       <ProjectPreparationRouteScreen
         route={{
           params: {
-            environmentId: "dorothy",
+            environmentId: "maple",
             projectId: "corbelo",
             destinationEnvironmentId: "mini",
           },

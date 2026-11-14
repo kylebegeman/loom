@@ -21,7 +21,7 @@ see [TESTING.md](./TESTING.md) for remaining interaction and platform coverage.
 Platform-owned Vault accounts/control plane, production key custody and unattended backend
 unlock, full durable decision audit, richer typed account/connection records, and production
 operating/recovery integration remain unfinished. The current service token connection is a
-development bootstrap, not enrolled-host authentication or per-item workload grants. Dorothy's
+development bootstrap, not enrolled-host authentication or per-item workload grants. Maple's
 SSH setup and personal 1Password integration have not changed.
 
 All sixteen Vault packets remain selected. See [PRODUCT.md](./PRODUCT.md) for the complete

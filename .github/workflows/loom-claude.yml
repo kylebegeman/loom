@@ -2,8 +2,9 @@
 #
 # Mention @claude in a pull request comment or review and Claude works on that
 # pull request's branch: fix a failing integration, reapply a seam, answer a
-# question. Only the repository owner can trigger it. Claude runs on Kyle's pooled
-# accounts through Switchboard on Dorothy, reached over the tailnet.
+# question. Only the repository owner can trigger it. Claude runs on the owner's pooled
+# accounts through the Switchboard gateway named by the LOOM_SWITCHBOARD_URL repository
+# variable, reached over the tailnet.
 name: Loom Claude
 
 on:
@@ -36,7 +37,8 @@ jobs:
       # gh treats a remote named "upstream" as the default repository; pin it
       # to the fork so pull requests and comments never land on pingdotgg/t3code.
       GH_REPO: ${{ github.repository }}
-      ANTHROPIC_BASE_URL: http://dorothy.tail1dab34.ts.net:8317
+      # The gateway's private tailnet origin, such as http://machine.tailnet.ts.net:8317.
+      ANTHROPIC_BASE_URL: ${{ vars.LOOM_SWITCHBOARD_URL }}
       # Telemetry and update checks would carry the gateway key to api.anthropic.com.
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     steps:
@@ -68,6 +70,14 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:servers
+
+      # An empty base URL would send the gateway key to api.anthropic.com instead.
+      - name: Require the Switchboard URL
+        run: |
+          if [ -z "$ANTHROPIC_BASE_URL" ]; then
+            echo "::error::Set the LOOM_SWITCHBOARD_URL repository variable to the Switchboard gateway's tailnet origin."
+            exit 1
+          fi
 
       - name: Claude
         uses: anthropics/claude-code-action@8041f1d17e0e7d2f2cfe35002962e9f26237c0bb # v1.0.263

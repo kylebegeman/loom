@@ -21,15 +21,15 @@ vi.mock("~/localApi", () => ({
 import { openEnvironmentUrlExternallyWith } from "./navigation";
 
 const LOCAL = EnvironmentId.make("env-local");
-const REMOTE = EnvironmentId.make("env-dorothy");
+const REMOTE = EnvironmentId.make("env-maple");
 const OTHER = EnvironmentId.make("env-other");
 
 const link = (port: number): PreviewLink => ({
   id: `link-${port}`,
   kind: "port",
   port,
-  host: `${port}-k3f9x2-dorothy.bagels.top`,
-  url: `https://${port}-k3f9x2-dorothy.bagels.top/`,
+  host: `${port}-k3f9x2-maple.example.net`,
+  url: `https://${port}-k3f9x2-maple.example.net/`,
   createdBy: "owner",
   threadId: null,
   laneId: null,
@@ -46,7 +46,7 @@ function makeDeps(overrides: Partial<PreviewNavigationDeps> = {}) {
   const open = vi.fn<PreviewNavigationDeps["open"]>(async (_env, input) => {
     const port = Number(/^link-(\d+)$/.exec(input.link)?.[1] ?? 5173);
     return {
-      url: `https://${port}-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc`,
+      url: `https://${port}-k3f9x2-maple.example.net/__loom/enter?code=abc`,
       link: link(port),
     };
   });
@@ -56,7 +56,7 @@ function makeDeps(overrides: Partial<PreviewNavigationDeps> = {}) {
     reachesLoopback: (environmentId) => environmentId === LOCAL,
     privateNetworkUrl: () => null,
     keepsTypedLoopbackOnPrivateNetwork: true,
-    environmentLabel: () => "Dorothy",
+    environmentLabel: () => "Maple",
     settingsPath: "Settings > Loom > Previews",
     share,
     open,
@@ -77,7 +77,7 @@ describe("openEnvironmentUrlExternallyWith", () => {
     await openEnvironmentUrlExternallyWith(deps, REMOTE, "http://localhost:5797/app");
     expect(share).toHaveBeenCalledWith(REMOTE, { port: 5797 });
     expect(systemBrowser.windows).toEqual([
-      "https://5797-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc",
+      "https://5797-k3f9x2-maple.example.net/__loom/enter?code=abc",
     ]);
     expect(systemBrowser.openExternal).not.toHaveBeenCalled();
   });
@@ -95,11 +95,11 @@ describe("openEnvironmentUrlExternallyWith", () => {
     await openEnvironmentUrlExternallyWith(
       deps,
       REMOTE,
-      "https://5173-k3f9x2-dorothy.bagels.top/app",
+      "https://5173-k3f9x2-maple.example.net/app",
     );
     expect(open.mock.calls.map(([environmentId]) => environmentId)).toEqual([REMOTE]);
     expect(systemBrowser.windows).toEqual([
-      "https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc",
+      "https://5173-k3f9x2-maple.example.net/__loom/enter?code=abc",
     ]);
   });
 

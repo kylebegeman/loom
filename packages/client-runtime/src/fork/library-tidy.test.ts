@@ -16,8 +16,8 @@ import {
   type LibraryTidyReason,
 } from "./library-tidy.ts";
 
-const dorothy = EnvironmentId.make("dorothy");
-const nora = EnvironmentId.make("nora");
+const maple = EnvironmentId.make("maple");
+const juniper = EnvironmentId.make("juniper");
 const now = Date.parse("2026-10-16T12:00:00.000Z");
 const checkedAt = "2026-10-16T11:59:00.000Z";
 
@@ -25,12 +25,12 @@ const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
   id: "copy",
   projectId: "loom",
   projectRevision: 1,
-  environmentId: dorothy,
-  rootPath: "/Users/kyle/Developer/loom",
+  environmentId: maple,
+  rootPath: "/Users/me/Developer/loom",
   repositories: [
     {
       resourceId: "web",
-      path: "/Users/kyle/Developer/loom",
+      path: "/Users/me/Developer/loom",
       localProjectId: ProjectId.make("local"),
       head: "abc",
       branch: "main",
@@ -90,7 +90,7 @@ describe("libraryTidySuggestions", () => {
   const clean = copy({ id: "clean" });
   const dirty = copy({ id: "dirty" });
   const unpushed = copy({ id: "unpushed" });
-  const away = copy({ id: "away", environmentId: nora });
+  const away = copy({ id: "away", environmentId: juniper });
   const unknown = copy({ id: "unknown" });
 
   it.each<{
@@ -159,7 +159,7 @@ describe("libraryTidySuggestions", () => {
     {
       name: "a copy with no repositories to vouch for it",
       copy: copy({ id: "plain", repositories: [] }),
-      health: { copyId: "plain", environmentId: dorothy, repositories: [], checkedAt },
+      health: { copyId: "plain", environmentId: maple, repositories: [], checkedAt },
       reasons: [{ kind: "no-repositories" }],
     },
   ])("sorts $name", ({ copy: target, health: read, connected = true, reasons }) => {
@@ -198,7 +198,7 @@ describe("libraryTidySuggestions", () => {
       entry: entry([clean, away]),
       health: [health(clean), health(away)],
       connected: online,
-      canRemove: (target) => target.environmentId !== nora,
+      canRemove: (target) => target.environmentId !== juniper,
       now,
     });
     expect(result.safe).toEqual([clean]);
@@ -244,14 +244,14 @@ describe("libraryCopyRemovalPermission", () => {
     });
     const canRemove = AtomRegistry.make().get(
       libraryCopyRemovalPermission(
-        { releaseCopy: grantedOn(dorothy), unregisterCopy: grantedOn(nora) },
-        [dorothy, nora],
+        { releaseCopy: grantedOn(maple), unregisterCopy: grantedOn(juniper) },
+        [maple, juniper],
       ),
     );
-    expect(canRemove(copy({ environmentId: dorothy }))).toBe(true);
-    expect(canRemove(copy({ environmentId: dorothy, ownership: "borrowed" }))).toBe(false);
-    expect(canRemove(copy({ environmentId: nora, ownership: "borrowed" }))).toBe(true);
-    expect(canRemove(copy({ environmentId: nora }))).toBe(false);
+    expect(canRemove(copy({ environmentId: maple }))).toBe(true);
+    expect(canRemove(copy({ environmentId: maple, ownership: "borrowed" }))).toBe(false);
+    expect(canRemove(copy({ environmentId: juniper, ownership: "borrowed" }))).toBe(true);
+    expect(canRemove(copy({ environmentId: juniper }))).toBe(false);
   });
 });
 
@@ -340,7 +340,7 @@ describe("runLibraryTidy", () => {
   });
 
   it("keeps copies whose computer went offline or that the server would block", async () => {
-    const away = copy({ id: "away", environmentId: nora });
+    const away = copy({ id: "away", environmentId: juniper });
     const busy = copy({ id: "busy" });
     const run = harness({
       busy: status(busy, {
@@ -352,7 +352,7 @@ describe("runLibraryTidy", () => {
       ...run,
       copies: [away, busy],
       archive: false,
-      connected: (id) => id !== nora,
+      connected: (id) => id !== juniper,
     });
     expect(run.calls).toEqual(["status:busy"]);
     expect(result.copies).toEqual([
@@ -368,7 +368,7 @@ describe("runLibraryTidy", () => {
   it("keeps a copy whose worktrees elsewhere would break, without asking the server to remove it", async () => {
     const linked = copy({ id: "linked" });
     const worktree =
-      "Worktrees made from these files still exist: /Users/kyle/.t3/worktrees/loom/feature. Land or remove them first. Removing these files would break them.";
+      "Worktrees made from these files still exist: /Users/me/.t3/worktrees/loom/feature. Land or remove them first. Removing these files would break them.";
     // A snapshot still works here, so the server issues a review token alongside the blocker.
     const run = harness({ linked: status(linked, { releaseBlockers: [worktree] }) });
     const result = await runLibraryTidy({

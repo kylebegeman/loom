@@ -56,7 +56,7 @@ identities are scoped client sessions, not email/password users. The first local
 provisions, revokes and replaces a session against synthetic data, independently of gated Vault
 login delivery. The local target is available without a VPS deployment.
 
-Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests. Mailbox-scoped
+Kyle confirmed that `vault@example.com` exists and is dedicated to Vault tests. Mailbox-scoped
 reader credentials and live delivery acceptance remain pending. A gated test-only inbox
 contract proves read-only message selection; it does not enable automatic verification or
 agent access to live mail. Remaining choices:

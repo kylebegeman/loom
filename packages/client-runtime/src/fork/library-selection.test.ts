@@ -58,9 +58,9 @@ describe("Library selection across create and route changes", () => {
   });
   it("retains host and thread identities outside a leaf route context", () => {
     expect(
-      libraryRouteParams({ environmentId: "dorothy", threadId: "conversation", unrelated: true }),
+      libraryRouteParams({ environmentId: "maple", threadId: "conversation", unrelated: true }),
     ).toEqual({
-      environmentId: "dorothy",
+      environmentId: "maple",
       threadId: "conversation",
       projectId: undefined,
       conversationId: undefined,

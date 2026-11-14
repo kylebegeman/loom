@@ -48,7 +48,7 @@ export function connectionFailingSinceText(failingSince: number, now: number): s
       });
 }
 
-/** "Can't reach Dorothy since 3:04 PM". Pair it with `CONNECTION_STALL_DETAIL`. */
+/** "Can't reach Maple since 3:04 PM". Pair it with `CONNECTION_STALL_DETAIL`. */
 export function connectionStallTitle(label: string, failingSince: number, now: number): string {
   return `Can't reach ${label} since ${connectionFailingSinceText(failingSince, now)}`;
 }
@@ -59,7 +59,7 @@ export const CONNECTION_STALL_DETAIL = "Loom keeps trying.";
 export interface ComputerDirectoryHealth {
   /** A recent live report, or the age of older or cached evidence. */
   readonly text: string;
-  /** For example "Codex needs attention on Dorothy.", or null. */
+  /** For example "Codex needs attention on Maple.", or null. */
   readonly attention: string | null;
 }
 

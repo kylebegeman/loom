@@ -75,11 +75,11 @@ describe("known project storage inventory", () => {
 });
 
 const repositoryIdentity = {
-  canonicalKey: "github.com/kylebegeman/atlas",
+  canonicalKey: "github.com/octocat/atlas",
   locator: {
     source: "git-remote" as const,
     remoteName: "origin",
-    remoteUrl: "https://github.com/kylebegeman/atlas.git",
+    remoteUrl: "https://github.com/octocat/atlas.git",
   },
   provider: SourceControlProviderKind.make("github"),
   owner: "kylebegeman",

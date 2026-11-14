@@ -9,11 +9,11 @@ Citations are to this fork at upstream v0.0.42 (`a931bd85f3`; paths re-checked a
 
 ### Old Loom implementation
 
-Old Loom (`bagelvault/loom@a79ec506`) implemented review across contracts, orchestration,
+Old Loom (the old private Loom repository at `a79ec506`) implemented review across contracts, orchestration,
 two adapters and the web client. Details and links in [REFERENCES.md](./REFERENCES.md).
 
 - Contracts: `ReviewStartTarget` union (`uncommittedChanges`, `baseBranch {branch}`, `commit
-{sha, title?}`, `custom {instructions <= 12k}`), `ReviewStartDelivery = inline | detached`,
+  {sha, title?}`, `custom {instructions <= 12k}`), `ReviewStartDelivery = inline | detached`,
   `ProviderReviewStartInput {threadId, target, delivery, modelSelection?}`
   (`packages/contracts/src/review.ts:6-27`, `provider.ts:125-139`); orchestration command
   `thread.review.start` and event `thread.review-start-requested`; capability flag
@@ -69,7 +69,7 @@ Nothing in upstream calls `review/start`, and there is no AI review anywhere
 - **impeccable** (`pbakaus/impeccable`, Apache-2.0): deterministic Rust detector,
   `impeccable detect --json [--no-config] <files>`; exit 0 clean, 2 findings, 1 scan error;
   JSON array of `{antipattern, name, description, severity: warning|error|advisory, category:
-slop|quality, file, line, snippet}` (`crates/foundation/src/findings.rs:13-31`,
+  slop|quality, file, line, snippet}` (`crates/foundation/src/findings.rs:13-31`,
   `crates/detect/src/cli.rs:24-64,211-213`); scannable extensions in
   `crates/detect/src/file_system.rs:19-34`. The npm shim downloads a binary from GitHub
   releases if none is found; Loom should require a user-installed binary (`IMPECCABLE_BIN` or
@@ -457,7 +457,7 @@ about twice as much surrounding code). It is a rough guide and the UI says "abou
      same `projectId`, `branch` and `worktreePath` as the source, `title` "Review: <source
      title>" (or "Review (<model short name>): <source title>" with several reviewers, capped at
      120 characters), `modelSelection` with the effort option applied, `runtimeMode:
-"approval-required"`, `interactionMode: "default"`.
+     "approval-required"`, `interactionMode: "default"`.
    - `thread.turn.start` (`orchestration.ts:1238-1258`) with the brief as the user message,
      the same `modelSelection`, **`runtimeMode: "approval-required"` set explicitly** (the
      command's decoding default is `full-access`, `orchestration.ts:1251`) and
@@ -559,7 +559,7 @@ tools):
   failure `run-closed`.
 - Validation per finding, against the checkout: a relative path, or an absolute path inside the
   checkout (made relative); no `..` escaping the root; the file exists (`fileState:
-"present"`) or appears as deleted in the target diff (`"deleted"`, lines kept as given);
+  "present"`) or appears as deleted in the target diff (`"deleted"`, lines kept as given);
   otherwise the finding is rejected with a reason. `endLine < startLine` is swapped; lines past
   the end of a present file are clamped; `endLine` without `startLine` becomes both.
   `file: null` gives `fileState: "none"` and no lines. Exact duplicates (same file, lines,
@@ -627,7 +627,7 @@ goes into `modelSelection.options` as `{ id, value }` (`ProviderOptionSelection`
 ### Agent tool `loom_ai_code_review_start` (`mcp.ts`)
 
 - Parameters: `{ target: "uncommitted" | "branch" | "turn" | "commit", baseRef?: string,
-commitSha?: string, instructions?: string (max 4,000) }`. `turn` means the latest completed
+  commitSha?: string, instructions?: string (max 4,000) }`. `turn` means the latest completed
   turn of the calling thread.
 - Description: "Start a Loom code review of this thread's changes by other models. Findings go
   to the user, not to you. Only works when the user allows it."
@@ -692,8 +692,8 @@ targets have no diff scope, so they show "Open file" only.
 
 - **L02 present** (`fork_thread_lineage_links` exists): per reviewer thread
   `INSERT OR IGNORE INTO fork_thread_lineage_links (child_thread_id, parent_thread_id,
-project_id, kind, context_mode, through_message_id, carried_message_count, created_by,
-created_at) VALUES (?, ?, ?, 'review', 'none', NULL, 0, 'user', ?)` (`created_by` is
+  project_id, kind, context_mode, through_message_id, carried_message_count, created_by,
+  created_at) VALUES (?, ?, ?, 'review', 'none', NULL, 0, 'user', ?)` (`created_by` is
   `'agent'` for agent-started reviews), guarded by a `sqlite_master` check that the table
   exists. L02
   defines the `review` kind in `ThreadLineageKind` and its `CHECK` (L02 TECHNICAL.md,

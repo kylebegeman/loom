@@ -45,7 +45,7 @@ describe("graphifyEnvironment", () => {
     const env = graphifyEnvironment(
       {
         PATH: "/usr/bin",
-        HOME: "/home/kyle",
+        HOME: "/home/me",
         ANTHROPIC_API_KEY: "a",
         OPENAI_API_KEY: "b",
         OPENAI_BASE_URL: "http://proxy",
@@ -57,7 +57,7 @@ describe("graphifyEnvironment", () => {
     );
     expect(env).toEqual({
       PATH: "/usr/bin",
-      HOME: "/home/kyle",
+      HOME: "/home/me",
       GRAPHIFY_OUT: "/state/code-graph/p1",
       GRAPHIFY_NO_TIPS: "1",
       PYTHONUNBUFFERED: "1",

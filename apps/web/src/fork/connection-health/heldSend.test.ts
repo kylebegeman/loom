@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { canHoldSendFor, unavailableSendNotice, useHeldSendStore } from "./heldSend";
 
 const held = (messageId: string) => ({
-  environmentId: EnvironmentId.make("dorothy"),
+  environmentId: EnvironmentId.make("maple"),
   messageId: MessageId.make(messageId),
   commandId: CommandId.make(`command-${messageId}`),
   dispatchMode: "auto" as const,
@@ -40,33 +40,33 @@ describe("unavailable send notice", () => {
 
   it("asks for a sign-in by name when the computer refused an expired one", () => {
     expect(
-      unavailableSendNotice({ label: "Dorothy", connection: expired, identitySignIn: true }),
+      unavailableSendNotice({ label: "Maple", connection: expired, identitySignIn: true }),
     ).toEqual({
-      title: "Sign in to Dorothy to send",
+      title: "Sign in to Maple to send",
       description: "Your message is still in the composer.",
     });
     expect(
-      unavailableSendNotice({ label: "Dorothy", connection: expired, identitySignIn: false }).title,
-    ).toBe("Not sent: Dorothy needs you to sign in or pair again");
+      unavailableSendNotice({ label: "Maple", connection: expired, identitySignIn: false }).title,
+    ).toBe("Not sent: Maple needs you to sign in or pair again");
   });
 
   it("names the computer and keeps the draft for every other state", () => {
     expect(
       unavailableSendNotice({
-        label: "Dorothy",
+        label: "Maple",
         connection: { phase: "error", error: "Update your app.", blockedReason: "configuration" },
         identitySignIn: true,
       }),
     ).toEqual({
-      title: "Not sent: can't connect to Dorothy",
+      title: "Not sent: can't connect to Maple",
       description: "Your message is still in the composer. Update your app.",
     });
     expect(
       unavailableSendNotice({
-        label: "Dorothy",
+        label: "Maple",
         connection: { phase: "available", error: null },
         identitySignIn: false,
       }).title,
-    ).toBe("Not sent: Dorothy is switched off");
+    ).toBe("Not sent: Maple is switched off");
   });
 });

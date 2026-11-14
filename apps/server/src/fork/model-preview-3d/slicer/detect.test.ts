@@ -14,10 +14,10 @@ it("reads installed CLI versions after initialization messages and bounds platfo
   ).toBe("02.08.04.57");
   expect(slicerVersion("PrusaSlicer 2.9.1 based on Slic3r")).toBe("2.9.1");
   expect(slicerVersion("No executable")).toBeNull();
-  expect(slicerCandidates("bambu-studio", "/home/kyle", "darwin")).toContain(
+  expect(slicerCandidates("bambu-studio", "/home/me", "darwin")).toContain(
     "/Applications/BambuStudio.app/Contents/MacOS/BambuStudio",
   );
-  expect(slicerCandidates("prusa-slicer", "/home/kyle", "linux")).toEqual(["prusa-slicer"]);
+  expect(slicerCandidates("prusa-slicer", "/home/me", "linux")).toEqual(["prusa-slicer"]);
 });
 it.effect("probes from a scratch directory so slicer side files never reach the server cwd", () =>
   Effect.gen(function* () {

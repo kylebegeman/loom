@@ -115,10 +115,10 @@ describe("DesktopWebLinks", () => {
       yield* Effect.gen(function* () {
         const webLinks = yield* DesktopWebLinks.DesktopWebLinks;
         yield* webLinks.receive("https://example.com/page");
-        const first = yield* Effect.forkChild(webLinks.receive("file:///Users/k/one.html"));
+        const first = yield* Effect.forkChild(webLinks.receive("file:///Users/me/one.html"));
         yield* Deferred.await(opened);
-        yield* webLinks.receive("file:///Users/k/two.html");
-        yield* webLinks.receive("file:///Users/k/three.html");
+        yield* webLinks.receive("file:///Users/me/two.html");
+        yield* webLinks.receive("file:///Users/me/three.html");
         yield* Deferred.succeed(dismissed, undefined);
         yield* Fiber.join(first);
         assert.strictEqual(shown.length, 1);

@@ -196,10 +196,10 @@ it.effect("tells an agent where projects, worktrees, lanes and scratch work go",
       );
     expect(results.at(-1)?.result).toMatchObject({
       folders: {
-        projects: "/home/kyle/Developer/active",
-        worktrees: "/home/kyle/.t3/worktrees",
-        lanes: "/home/kyle/Developer/lanes",
-        scratch: "/home/kyle/.t3/scratch",
+        projects: "/home/me/Developer/active",
+        worktrees: "/home/me/.t3/worktrees",
+        lanes: "/home/me/Developer/lanes",
+        scratch: "/home/me/.t3/scratch",
       },
     });
   }).pipe(
@@ -216,15 +216,15 @@ it.effect("tells an agent where projects, worktrees, lanes and scratch work go",
         Layer.provideMerge(
           Layer.mock(ProjectPlacement.ProjectPlacement)({
             folders: Effect.succeed({
-              projects: "/home/kyle/Developer/active",
-              worktrees: "/home/kyle/.t3/worktrees",
-              lanes: "/home/kyle/Developer/lanes",
+              projects: "/home/me/Developer/active",
+              worktrees: "/home/me/.t3/worktrees",
+              lanes: "/home/me/Developer/lanes",
             }),
           }),
         ),
         Layer.provideMerge(
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            scratchRoot: Effect.succeedSome("/home/kyle/.t3/scratch"),
+            scratchRoot: Effect.succeedSome("/home/me/.t3/scratch"),
           }),
         ),
       ),

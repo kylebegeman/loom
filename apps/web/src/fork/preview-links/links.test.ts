@@ -8,8 +8,8 @@ const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
 
 const SETTINGS: PreviewLinksSettings = {
   enabled: true,
-  suffix: "bagels.top",
-  machine: "dorothy",
+  suffix: "example.net",
+  machine: "maple",
   defaultLifetime: "12h",
   gatewayPort: 3779,
 };
@@ -18,8 +18,8 @@ const link = (id: string, patch: Partial<PreviewLink> = {}): PreviewLink => ({
   id,
   kind: "port",
   port: 5173,
-  host: "5173-k3f9x2-dorothy.bagels.top",
-  url: "https://5173-k3f9x2-dorothy.bagels.top/",
+  host: "5173-k3f9x2-maple.example.net",
+  url: "https://5173-k3f9x2-maple.example.net/",
   createdBy: "owner",
   threadId: null,
   laneId: null,
@@ -107,8 +107,8 @@ describe("linkTiming", () => {
 describe("settingsFromDraft", () => {
   const draft: SettingsDraft = {
     enabled: true,
-    suffix: " Bagels.Top ",
-    machine: "Dorothy",
+    suffix: " Example.Net ",
+    machine: "Maple",
     defaultLifetime: "12h",
     gatewayPort: "3779",
   };
@@ -117,8 +117,8 @@ describe("settingsFromDraft", () => {
     expect(settingsFromDraft(draft)).toEqual({
       settings: {
         enabled: true,
-        suffix: "bagels.top",
-        machine: "dorothy",
+        suffix: "example.net",
+        machine: "maple",
         defaultLifetime: "12h",
         gatewayPort: 3779,
       },
@@ -135,7 +135,7 @@ describe("settingsFromDraft", () => {
     expect(settingsFromDraft({ ...draft, suffix: "localhost" })).toEqual({
       problem: "Use a domain you own, such as example.com.",
     });
-    expect(settingsFromDraft({ ...draft, machine: "dorothy-mac" })).toEqual({
+    expect(settingsFromDraft({ ...draft, machine: "maple-mac" })).toEqual({
       problem: "Use up to 40 lowercase letters and digits for the computer name.",
     });
     expect(settingsFromDraft({ ...draft, gatewayPort: "80" })).toEqual({

@@ -1280,6 +1280,8 @@ apps/web/src/hooks/useHandleNewThread.ts	file-placement	1
 .agents/skills/test-t3-mobile/SKILL.md	mobile-navigation	1
 .agents/skills/test-t3-mobile/scripts/pair-client.sh	mobile-identity	3
 .gitignore	dev-fixtures	1
+.gitignore	personal-identifiers	1
+scripts/check-changed.ts	personal-identifiers	1
 AGENTS.md	update-signing	1
 README.md	brand	1
 apps/desktop/package.json	-	"jose": "catalog:"

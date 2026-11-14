@@ -5,9 +5,9 @@ Treat external repositories as references, not code to copy.
 ## Old Loom
 
 F4 in [selections.md](../../selections.md), first listed as not selected; confirmed for this
-packet on 2026-09-24. Old Loom (`bagelvault/loom` 0.13.10):
+packet on 2026-09-24. Old Loom (the old private Loom repository 0.13.10):
 
-- https://github.com/bagelvault/loom/blob/a79ec506/packages/utilities/src/index.ts
+- `packages/utilities/src/index.ts`
   (913 lines, 30 tools, no runtime dependencies). Keep: the registry shape (id, label,
   category, description, example, run), the categories, most of the tool list. Adapt:
   hashing used `crypto.subtle` (breaks on plain-`http` remote origins) and a hand-written
@@ -16,18 +16,18 @@ packet on 2026-09-24. Old Loom (`bagelvault/loom` 0.13.10):
   `randomString` used a biased `byte % length`, `bip39.mnemonic` was not real BIP39,
   `ulid.generate` was "ULID-like". Drop: BIP39 (Kyle confirmed on 2026-09-24), MIME table,
   the server copy.
-- https://github.com/bagelvault/loom/blob/a79ec506/packages/utilities/src/index.test.ts
+- `packages/utilities/src/index.test.ts`
   (4 tests). This packet tests every tool.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/code/UtilitiesSurface.tsx
+- `apps/web/src/components/code/UtilitiesSurface.tsx`
   (160 lines: search, category dropdown, list, input and `key=value` options textarea,
   output, warnings). Adapt the list plus detail layout. Drop: the free-text options
   textarea (typed controls instead) and the server round trip.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/code/UtilitiesSurface.logic.ts
+- `apps/web/src/components/code/UtilitiesSurface.logic.ts`
   (69 lines) and `UtilitiesAskLayer.tsx` (75 lines, chat prompts). Drop.
 - Old placement: a full-page area `utilities` at `/code/utilities`
-  (https://github.com/bagelvault/loom/blob/a79ec506/packages/contracts/src/areas.ts, lines
+  (`packages/contracts/src/areas.ts,` lines
   707-714), plus server RPC `utilities.list` / `utilities.run`
-  (https://github.com/bagelvault/loom/blob/a79ec506/packages/contracts/src/utilities.ts), an
+  (`packages/contracts/src/utilities.ts),` an
   MCP toolkit (`apps/server/src/mcp/toolkits/utilities/`) and a CLI
   (`apps/server/src/cli/util.ts`). All dropped; see TECHNICAL.md, Alternatives.
 

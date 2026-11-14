@@ -232,7 +232,7 @@ describe("deriveInspectorModel workspace and pull request", () => {
   it("offers the branch and worktree path to copy, with a short worktree name", () => {
     const model = deriveInspectorModel(
       inputs({
-        ...withThread({ worktreePath: "/Users/kyle/Developer/active/loom-l04/" }),
+        ...withThread({ worktreePath: "/Users/me/Developer/active/loom-l04/" }),
         git: { state: "ready", status: gitStatus({ aheadCount: 2, behindCount: 1 }) },
       }),
     );
@@ -249,10 +249,10 @@ describe("deriveInspectorModel workspace and pull request", () => {
       {
         id: "worktree",
         name: "Worktree",
-        value: "/Users/kyle/Developer/active/loom-l04/",
+        value: "/Users/me/Developer/active/loom-l04/",
         short: "loom-l04",
         mono: true,
-        copy: "/Users/kyle/Developer/active/loom-l04/",
+        copy: "/Users/me/Developer/active/loom-l04/",
       },
     ]);
   });

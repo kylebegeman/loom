@@ -124,7 +124,7 @@ Using the `test-t3-app` skill and authorized Browser panel, a new isolated incog
 Loom's pairing page, then consumed a fresh private pairing link for the relaunched target and rendered the
 three synthetic thread titles, the isolated `loom-test` checkout and disabled-provider guidance.
 Screenshot:
-`/Users/kyle/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mvh5hd7p-b3cc41cf.png`.
+`/Users/me/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mvh5hd7p-b3cc41cf.png`.
 The screenshot is QA evidence outside git, not runtime state used by this target. Browser startup
 showed expected unauthenticated WebSocket refusals; a source-watch restart also briefly returned
 502 before recovery. Pause edits to server `src/`, `packages/` and `apps/server/package.json` during the proof. No native pass is claimed;
@@ -171,7 +171,7 @@ Expired readline refuses before socket access. No sleeps or live network destina
 
 A separate no-sleep slow-drip reproduction confirms optional s1: one read can finish after 45
 simulated seconds despite a thirty-second boundary budget. This remains explicitly documented,
-not claimed fixed. No live-read gate is opened. The proposed `vault-reader@begam.in` login is
+not claimed fixed. No live-read gate is opened. The proposed `vault-reader@example.com` login is
 now named in the mail-owner handoff; its setup is not claimed.
 
 The earlier in-memory mutation pass killed **28/28 mutants**, without changing the disk source:
@@ -225,7 +225,7 @@ Python syntax, documentation references, seam manifest and whitespace are checke
 or client code changes in this slice, so previous package typechecks and browser/native evidence
 are not claimed as new checks. Native acceptance stays with the release owner.
 
-Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests. No live reader
+Kyle confirmed that `vault@example.com` exists and is dedicated to Vault tests. No live reader
 identity, authentication, folder routing/header preservation or unchanged live flags have been
 verified. [Kyle-only credential custody and L79 approval](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
 remain required before any live acceptance. The default connector stays unavailable, and the

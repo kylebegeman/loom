@@ -2,7 +2,7 @@
 
 Status: Slices 1 to 5 are implemented on fork `main`, with the follow-up gap fixes for
 sign-in, pages, the gateway and backings. The Library has run them on `0.0.90` since
-20 October 2026 (LP-22) and serves `pages.bagels.top` with a Let's Encrypt certificate.
+20 October 2026 (LP-22) and serves `pages.example.net` with a Let's Encrypt certificate.
 Slice 6, guest links, is parked. The real-client checks in
 [TESTING.md](./TESTING.md#still-to-check) are pending.
 
@@ -10,7 +10,7 @@ Selection: Hosted previews, Kyle 2026-10-18. Kyle approved slices 2 to 6 and the
 schema changes on 2026-10-19. User guide: [Preview links](../../user/preview-links.md).
 
 Loom shares a dev server port on the user's computer at an HTTPS address on the user's own
-domain, such as `https://5173-k3f9x2-dorothy.example.com/`, through a Cloudflare tunnel Loom
+domain, such as `https://5173-k3f9x2-maple.example.com/`, through a Cloudflare tunnel Loom
 runs itself. Agents can also share a built folder or a Docker container on one of their lane
 ports, and publish a rendered page or a Dossier to the user's Library, where it lives at a
 private `pages.<domain>` address and a reply typed under it comes back to the thread. Every

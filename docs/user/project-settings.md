@@ -780,9 +780,8 @@ Use the agent terminal's MCP connection or set `LOOM_MCP_ENDPOINT` and
 `LOOM_MCP_AUTHORIZATION` privately. Management tools require full access.
 
 Sites reads the personal API through your Library server, using client
-credentials set in that server's environment. Set `LOOM_IDENTITY_ISSUER`,
-`LOOM_SITES_CLIENT_ID`, and `LOOM_SITES_CLIENT_SECRET` to connect it, and
-`LOOM_SITES_API_ORIGIN` only for an API other than `https://api.begam.in`. Both
-addresses must be HTTPS origins. To manage sites from Loom, also set
+credentials set in that server's environment. Set `LOOM_SITES_API_ORIGIN` to the
+API's origin, and `LOOM_IDENTITY_ISSUER`, `LOOM_SITES_CLIENT_ID`, and
+`LOOM_SITES_CLIENT_SECRET` to connect it. Both addresses must be HTTPS origins. To manage sites from Loom, also set
 `LOOM_SITES_MANAGER_CLIENT_ID` and `LOOM_SITES_MANAGER_CLIENT_SECRET` for a
 separate client. Restart the server after changing them.

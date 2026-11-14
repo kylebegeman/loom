@@ -276,7 +276,7 @@ it.effect("fetches the shared catalog with the client credential and rejects par
     );
     const fetch = fetchSharedCodexCatalog(
       {
-        url: "https://dorothy.example.test/api/loom/switchboard",
+        url: "https://maple.example.test/api/loom/switchboard",
         keyCommand: { command: "/usr/bin/security", args: [] },
       },
       {},
@@ -287,7 +287,7 @@ it.effect("fetches the shared catalog with the client credential and rejects par
     assert.deepEqual(yield* fetch, [{ slug: "gpt-6.1-sol" }, { slug: "gpt-6-astra" }]);
     assert.deepEqual(requests, [
       {
-        url: "https://dorothy.example.test/api/loom/switchboard/codex/models",
+        url: "https://maple.example.test/api/loom/switchboard/codex/models",
         authorization: `Bearer ${key}`,
       },
     ]);

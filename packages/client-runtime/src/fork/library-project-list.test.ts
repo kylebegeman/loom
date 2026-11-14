@@ -17,8 +17,8 @@ import {
   type LocalProjectIcon,
 } from "./library-project-list.ts";
 
-const dorothy = EnvironmentId.make("dorothy");
-const nora = EnvironmentId.make("nora");
+const maple = EnvironmentId.make("maple");
+const juniper = EnvironmentId.make("juniper");
 const project = (patch: Partial<LibraryProject>): LibraryProject => ({
   id: "project",
   title: "Project",
@@ -34,8 +34,8 @@ const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
   id: "copy",
   projectId: "project",
   projectRevision: 1,
-  environmentId: dorothy,
-  rootPath: "/Users/kyle/Developer/project",
+  environmentId: maple,
+  rootPath: "/Users/me/Developer/project",
   repositories: [],
   ownership: "managed",
   state: "ready",
@@ -46,7 +46,7 @@ const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
 const thread = (patch: Partial<LibraryThreadSummary>): LibraryThreadSummary => ({
   id: "summary",
   projectId: "project",
-  environmentId: dorothy,
+  environmentId: maple,
   threadId: ThreadId.make("thread"),
   localProjectId: ProjectId.make("local"),
   workingCopyId: null,
@@ -72,7 +72,7 @@ const iris = project({
 });
 const old = project({ id: "old", title: "Archive me", archived: true, color: "plum" });
 const copies = [
-  copy({ id: "c1", projectId: "loom", environmentId: nora, rootPath: "/Users/kyle/work/loom" }),
+  copy({ id: "c1", projectId: "loom", environmentId: juniper, rootPath: "/Users/me/work/loom" }),
   copy({ id: "c2", projectId: "iris" }),
 ];
 
@@ -144,8 +144,8 @@ describe("libraryLocalProjectIcon", () => {
   const local = (
     patch: Partial<LocalProjectIcon> & Pick<LocalProjectIcon, "id">,
   ): LocalProjectIcon => ({
-    environmentId: dorothy,
-    workspaceRoot: "/Users/kyle/Developer/project",
+    environmentId: maple,
+    workspaceRoot: "/Users/me/Developer/project",
     title: "Project",
     faviconPath: null,
     projectIcon: null,
@@ -153,7 +153,7 @@ describe("libraryLocalProjectIcon", () => {
   });
   const root = local({ id: ProjectId.make("root") });
   const repo = local({ id: ProjectId.make("repo") });
-  const elsewhere = local({ id: ProjectId.make("root"), environmentId: nora });
+  const elsewhere = local({ id: ProjectId.make("root"), environmentId: juniper });
   const repository = {
     resourceId: "r",
     path: "app",
@@ -182,7 +182,7 @@ describe("libraryLocalProjectIcon", () => {
 
 describe("filterProjectEntries", () => {
   const entries = projectEntries([loom, iris, old], copies, undefined);
-  const label = (id: EnvironmentId) => (id === nora ? "Nora" : "Dorothy");
+  const label = (id: EnvironmentId) => (id === juniper ? "Juniper" : "Maple");
   const titles = (filter: Partial<Parameters<typeof filterProjectEntries>[1]>) =>
     filterProjectEntries(
       entries,
@@ -192,13 +192,13 @@ describe("filterProjectEntries", () => {
 
   it("finds a project by its folder or the computer it lives on", () => {
     expect(titles({ search: "work/loom" })).toEqual(["Loom"]);
-    expect(titles({ search: "dorothy" })).toEqual(["iris"]);
+    expect(titles({ search: "maple" })).toEqual(["iris"]);
   });
 
   it("narrows by color and computer together, leaving archive state to the sections", () => {
     expect(titles({ colors: new Set(["plum"]) })).toEqual(["iris", "Archive me"]);
-    expect(titles({ colors: new Set(["plum"]), computer: dorothy })).toEqual(["iris"]);
-    expect(titles({ computer: nora })).toEqual(["Loom"]);
+    expect(titles({ colors: new Set(["plum"]), computer: maple })).toEqual(["iris"]);
+    expect(titles({ computer: juniper })).toEqual(["Loom"]);
   });
 });
 

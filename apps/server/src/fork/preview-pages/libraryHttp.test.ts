@@ -26,7 +26,7 @@ import { PreviewPagesMigrations } from "./libraryMigrations.ts";
 import * as PageLibrary from "./PageLibraryService.ts";
 
 const ROUTE = "http://library.example.test/api/loom/library/pages";
-const COMPUTER = "loom-host:environment-dorothy";
+const COMPUTER = "loom-host:environment-maple";
 const ENV = { LOOM_LIBRARY_AUTHORITY: "true", LOOM_PAGES_ORIGIN: "https://pages.example.test" };
 
 const decodePage = Schema.decodeUnknownEffect(PreviewPage);
@@ -138,7 +138,7 @@ describe("Library page routes", () => {
         // None of the refused calls published anything.
         const computer = {
           subject: COMPUTER,
-          environmentId: EnvironmentId.make("environment-dorothy"),
+          environmentId: EnvironmentId.make("environment-maple"),
         };
         expect(yield* f.pages.list(computer)).toEqual([]);
       }),

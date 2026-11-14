@@ -262,9 +262,9 @@ A terminal prompt can also start with `omarchy agent prompt "YOUR QUESTION"`.
 
 The native AI usage panel shows Switchboard's cached limits for the highest-priority
 shared account. Open Switchboard for all accounts, model eligibility and credit
-policy. If Tailscale or Dorothy is unavailable, cloud AI reports an error and
-waits for connectivity. Local voice dictation still works offline. AI account
-login and subscription management stay on Dorothy.
+policy. If Tailscale or the Switchboard hub is unavailable, cloud AI reports an
+error and waits for connectivity. Local voice dictation still works offline. AI
+account login and subscription management stay on the hub.
 
 Run `loom-os status` to inspect configuration and installed executables. Run
 **LoomOS → Check connections**, or `loom-os doctor --human`, to check app servers,

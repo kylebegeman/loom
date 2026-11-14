@@ -4,15 +4,15 @@
 
 Not in the original selection; added from the repository review
 ([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on
-2026-09-24. Old Loom (`bagelvault/loom` at `a79ec506`) had no rule-pack feature. The
+2026-09-24. Old Loom (the old private Loom repository at `a79ec506`) had no rule-pack feature. The
 closest prior art is thread goals:
 
-- [.ledger/entries/0011-goals.md](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/0011-goals.md):
+- `.ledger/entries/0011-goals.md`:
   a goal pinned to a thread, stored app-side for every provider, mirrored best-effort to the
   engine (Codex `thread/goal/set`, Claude `/goal`). Keep: app-side state per thread for every
   provider. Drop: event-sourced goal commands (the fork cannot add orchestration events) and
   per-engine mirroring (this packet uses one delivery path).
-- [.ledger/entries/2577-cross-harness-context-compaction.md](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/2577-cross-harness-context-compaction.md):
+- `.ledger/entries/2577-cross-harness-context-compaction.md`:
   compaction on every provider, natively or by sending `/compact` (`/compress` for Cursor and
   Gemini) as an ordinary turn. Relevant twice: such turns start with `/` and must not be
   decorated, and a compacted conversation can lose earlier standing text, which is why this

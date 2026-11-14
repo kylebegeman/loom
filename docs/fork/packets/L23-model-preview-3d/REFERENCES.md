@@ -9,12 +9,12 @@ Sources for this packet. Treat external repositories as references, not code to 
 Loom has no 3D code: no three.js, OpenSCAD, Blender, manifold or OCCT dependencies, no model
 parser or viewer. Related remains, all dropped:
 
-| File                                                                                                                                                                                                                                                                                              | Note                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [packages/contracts/src/printing.ts](https://github.com/bagelvault/loom/blob/a79ec506/packages/contracts/src/printing.ts) (386)                                                                                                                                                                   | Printer fleet domain model; a design note for the Fabrication app, not for this panel. |
-| [apps/server/src/printing/Layers/PrintScheduler.ts](https://github.com/bagelvault/loom/blob/a79ec506/apps/server/src/printing/Layers/PrintScheduler.ts) (713)                                                                                                                                     | Every printer action went to a manual adapter that always "accepted".                  |
-| [apps/web/src/components/studio/StudioPrintingSurface.tsx](https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/studio/StudioPrintingSurface.tsx) (289)                                                                                                                       | Enqueue form taking a raw artifact id.                                                 |
-| [docs/archive/2026-07-pre-v1/lumen-cockpit-implementation/roadmap/phases/61-3d-printing-studio-and-printer-fleet-ops.md](https://github.com/bagelvault/loom/blob/a79ec506/docs/archive/2026-07-pre-v1/lumen-cockpit-implementation/roadmap/phases/61-3d-printing-studio-and-printer-fleet-ops.md) | The never-started plan (STL/3MF/OBJ/STEP/SCAD library, slicer sidecars).               |
+| File                                                                                                                     | Note                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `packages/contracts/src/printing.ts` (386)                                                                               | Printer fleet domain model; a design note for the Fabrication app, not for this panel. |
+| `apps/server/src/printing/Layers/PrintScheduler.ts` (713)                                                                | Every printer action went to a manual adapter that always "accepted".                  |
+| `apps/web/src/components/studio/StudioPrintingSurface.tsx` (289)                                                         | Enqueue form taking a raw artifact id.                                                 |
+| `docs/archive/2026-07-pre-v1/lumen-cockpit-implementation/roadmap/phases/61-3d-printing-studio-and-printer-fleet-ops.md` | The never-started plan (STL/3MF/OBJ/STEP/SCAD library, slicer sidecars).               |
 
 ## Kyle's Fabrication packet
 
@@ -22,7 +22,7 @@ parser or viewer. Related remains, all dropped:
 QUESTIONS, SAFETY; status "Not started"). Optional for this panel, never required:
 
 - ARCHITECTURE.md, "Loom preview contract": `GET /api/previews?path=&params=`, `POST
-/api/previews` for remote projects, `GET /files/<sha256>`, `GET /events?topic=preview:<hash>`,
+  /api/previews` for remote projects, `GET /files/<sha256>`, `GET /events?topic=preview:<hash>`,
   `/embed/model/<ref>`; "The panel renders the GLB with three.js on demand, with no idle
   animation loop". This packet only links to the app in v1.
 - REFERENCES.md facts reused here (verified there on 2026-09-24): OpenSCAD releases and
@@ -80,7 +80,7 @@ rather than the original packet's v0.0.42 line numbers.
     2026-09-11): https://projects.blender.org/lab/blender_mcp, docs
     https://www.blender.org/lab/mcp-server/
   - Kyle's Codex entry: `~/.codex/config.toml` lines 104-113 (`[mcp_servers.blender]`, command
-    `/Users/kyle/.local/bin/blender-mcp`, env host 127.0.0.1, port 9876, telemetry off, approval
+    `/Users/me/.local/bin/blender-mcp`, env host 127.0.0.1, port 9876, telemetry off, approval
     required for `execute_blender_code`). The command path is missing on 2026-09-24.
     `uv`/`uvx` are at `/opt/homebrew/bin`; Blender at `/opt/homebrew/bin/blender`
     and `/Applications/Blender.app`.

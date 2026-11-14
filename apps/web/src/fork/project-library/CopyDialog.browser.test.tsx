@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
 }));
 const placement: LibraryPlacement = {
   action: "clone",
-  rootPath: "/Users/kyle/Developer/active/corbelo",
+  rootPath: "/Users/me/Developer/active/corbelo",
   ownership: "managed",
   reason: "A new folder in the Projects folder",
 };
@@ -30,8 +30,8 @@ const computer = (environmentId: string, label: string) => ({
   connection: { phase: "connected" },
   serverConfig: {
     serverChosenFolders: true,
-    newProjectsRoot: "/Users/kyle/Developer/active",
-    folders: { projects: "/Users/kyle/Developer/active", worktrees: "/Users/kyle/.t3/worktrees" },
+    newProjectsRoot: "/Users/me/Developer/active",
+    folders: { projects: "/Users/me/Developer/active", worktrees: "/Users/me/.t3/worktrees" },
     environment: {
       capabilities: {
         supportsExecution: true,
@@ -61,7 +61,7 @@ vi.mock("./state", () => ({
   useLibraryAuthority: () => ({
     authorityId: "library",
     connected: true,
-    environments: [computer("dorothy", "Dorothy"), computer("air", "Air")],
+    environments: [computer("maple", "Maple"), computer("air", "Air")],
   }),
   useLibraryPermission: (command: unknown) =>
     command === state.commands.outcome || state.writeAllowed,
@@ -153,7 +153,7 @@ it("shows where the chosen computer puts the files and prepares them without a t
   await userEvent.click(page.getByRole("combobox"));
   await userEvent.click(page.getByRole("option", { name: "Air" }));
   await expect
-    .element(page.getByText("Loom will put the files in /Users/kyle/Developer/active/corbelo"))
+    .element(page.getByText("Loom will put the files in /Users/me/Developer/active/corbelo"))
     .toBeVisible();
   expect(state.placementTargets).toContainEqual({
     environmentId: "air",
@@ -180,18 +180,18 @@ const press = async (name: string) => {
 it("uses a browsed folder only when it holds the project, and downloads into a new folder inside it", async () => {
   state.prepare.mockReset();
   state.browsed = {
-    path: "/Users/kyle/Developer/active",
+    path: "/Users/me/Developer/active",
     repository: false,
     entries: ["corbelo", "other"],
   };
   state.inspect.mockResolvedValueOnce({
     _tag: "Success",
     value: {
-      rootPath: "/Users/kyle/Developer/active",
+      rootPath: "/Users/me/Developer/active",
       exists: true,
       repositories: [
         {
-          path: "/Users/kyle/Developer/active/other",
+          path: "/Users/me/Developer/active/other",
           relativePath: "other",
           remoteUrl: "https://github.com/kyle/other",
           head: null,
@@ -215,16 +215,16 @@ it("uses a browsed folder only when it holds the project, and downloads into a n
 
   state.inspect.mockResolvedValueOnce({
     _tag: "Success",
-    value: { rootPath: "/Users/kyle/Developer/active/corbelo-2", exists: false, repositories: [] },
+    value: { rootPath: "/Users/me/Developer/active/corbelo-2", exists: false, repositories: [] },
   });
   await press("Choose another folder");
   await press("Download into a new folder here");
   await expect
-    .element(page.getByText("Loom will put the files in /Users/kyle/Developer/active/corbelo-2"))
+    .element(page.getByText("Loom will put the files in /Users/me/Developer/active/corbelo-2"))
     .toBeVisible();
   expect(state.inspect).toHaveBeenLastCalledWith({
     environmentId: "air",
-    input: { rootPath: "/Users/kyle/Developer/active/corbelo-2" },
+    input: { rootPath: "/Users/me/Developer/active/corbelo-2" },
   });
 });
 

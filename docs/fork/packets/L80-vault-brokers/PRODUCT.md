@@ -34,7 +34,7 @@ Enroll a host through a reviewed, expiring challenge, then issue a renewable mac
 
 ## User experience
 
-Enroll Dorothy from a remote client, see whether its service can start unattended, and inspect the actual runner context. Disable a lost host, re-enroll a replacement and see the limits of outstanding leases.
+Enroll Maple from a remote client, see whether its service can start unattended, and inspect the actual runner context. Disable a lost host, re-enroll a replacement and see the limits of outstanding leases.
 
 ## Why it improves the product
 

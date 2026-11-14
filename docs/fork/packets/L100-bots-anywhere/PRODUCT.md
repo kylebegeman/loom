@@ -2,9 +2,9 @@
 
 ## Problem
 
-Bots live on the computer where they were made. Kyle's reviewer exists on Dorothy and nowhere
+Bots live on the computer where they were made. Kyle's reviewer exists on Maple and nowhere
 else, so a Mini or the VPS cannot run it, and a batch of 50 reviews competes with Kyle's own
-threads for Dorothy's CPU and provider sessions. The Library already knows Kyle's computers and
+threads for Maple's CPU and provider sessions. The Library already knows Kyle's computers and
 projects, and the Vault already keeps secrets per computer; bots use neither.
 
 ## What Kyle gets
@@ -28,10 +28,10 @@ projects, and the Vault already keeps secrets per computer; bots use neither.
   run, with "Ran on Mini 2", its reply, verdict and usage. Kyle can open the run thread when his
   client is connected to that computer.
 - **Batches on another computer.** A batch with a target feeds items to that computer at its free
-  slot count, so 50 reviews run on the Mini while Dorothy only waits for results.
+  slot count, so 50 reviews run on the Mini while Maple only waits for results.
 - **Per-computer control.** Each computer has a Remote runs setting: off by default, and when on,
   the highest runtime mode a remote run may use (`auto` by default). Remote runs show on the
-  target's Bots page under "Requested by Dorothy".
+  target's Bots page under "Requested by Maple".
 
 ## Decisions
 

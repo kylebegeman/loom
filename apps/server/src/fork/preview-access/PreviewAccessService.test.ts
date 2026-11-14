@@ -207,11 +207,11 @@ describe("PreviewAccessService pages tickets", () => {
         });
         const service = yield* startService(AUTHORITY_ENV);
         yield* service.register({
-          environmentId: EnvironmentId.make("environment-nora"),
+          environmentId: EnvironmentId.make("environment-juniper"),
           sessionId,
-          previews: { machine: "nora", suffix: "bagels.top" },
+          previews: { machine: "juniper", suffix: "example.net" },
         });
-        const host = "3000-abc123-nora.bagels.top";
+        const host = "3000-abc123-juniper.example.net";
         const nonce = randomPreviewNonce();
         yield* ticketFor(service, host, nonce);
         yield* TestClock.adjust("2 hours");
@@ -223,14 +223,14 @@ describe("PreviewAccessService pages tickets", () => {
   it.effect("signs for the hosts of the computer it is itself, which has no session to end", () =>
     withService(AUTHORITY_ENV, (service) =>
       Effect.gen(function* () {
-        const host = "3000-abc123-dorothy.bagels.top";
+        const host = "3000-abc123-maple.example.net";
         const nonce = randomPreviewNonce();
         const unknown = yield* ticketFor(service, host, nonce).pipe(Effect.flip);
         expect(unknown.reason).toBe("not-found");
         const access = yield* service.register({
           environmentId: LIBRARY_ENVIRONMENT,
           sessionId: null,
-          previews: { machine: "dorothy", suffix: "bagels.top" },
+          previews: { machine: "maple", suffix: "example.net" },
         });
         expect(access.origin).toBe(LIBRARY_ORIGIN);
         yield* TestClock.adjust("400 days");
@@ -246,9 +246,9 @@ describe("PreviewAccessService pages tickets", () => {
         const sql = yield* SqlClient.SqlClient;
         // Older builds wrote rows with no session, so a downgrade can leave one nothing revokes.
         yield* sql`INSERT INTO fork_preview_hosts (subject, environment_id, machine, suffix, updated_at)
-          VALUES ('loom-host:environment-nora', 'environment-nora', 'nora', 'bagels.top', '1970-01-01T00:00:00.000Z')`;
+          VALUES ('loom-host:environment-juniper', 'environment-juniper', 'juniper', 'example.net', '1970-01-01T00:00:00.000Z')`;
         const nonce = randomPreviewNonce();
-        const error = yield* ticketFor(service, "3000-abc123-nora.bagels.top", nonce).pipe(
+        const error = yield* ticketFor(service, "3000-abc123-juniper.example.net", nonce).pipe(
           Effect.flip,
         );
         expect(error.reason).toBe("not-found");
@@ -264,11 +264,11 @@ describe("PreviewAccessStore", () => {
       Effect.gen(function* () {
         const store = yield* makeStore;
         const stale = {
-          subject: "loom-host:environment-nora",
-          environmentId: "environment-nora",
+          subject: "loom-host:environment-juniper",
+          environmentId: "environment-juniper",
           sessionId: AuthSessionId.make("session-old"),
-          machine: "nora",
-          suffix: "bagels.top",
+          machine: "juniper",
+          suffix: "example.net",
         };
         yield* store.put(stale, "2026-01-01T00:00:00.000Z");
         const current = { ...stale, sessionId: AuthSessionId.make("session-new") };

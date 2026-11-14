@@ -508,7 +508,7 @@ else: target.private_json(target.instance_home(root)/'userdata'/'settings.json',
 
     def test_remote_credentialed_and_noncanonical_origins_refuse(self) -> None:
         self.assertEqual(target.loopback_origin("http://127.0.0.1:15713/"), "http://127.0.0.1:15713")
-        for origin in ("https://loom.begam.in", "http://0.0.0.0:15713", "http://localhost:15713",
+        for origin in ("https://loom.example.com", "http://0.0.0.0:15713", "http://localhost:15713",
                        "http://127.0.0.1:80", "http://127.0.0.1:15713/path",
                        "http://user:password@127.0.0.1:15713", "http://127.0.0.1:15713?token=secret",
                        "http://127.0.0.1:15713#secret", "http://127.0.0.1:bad"):

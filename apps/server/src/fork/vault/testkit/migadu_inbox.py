@@ -16,8 +16,8 @@ import time
 from typing import Any, Callable, Protocol
 
 
-MAILBOX = "vault@begam.in"
-READER = "vault-reader@begam.in"
+MAILBOX = "vault@example.com"
+READER = "vault-reader@example.com"
 HOST = "imap.migadu.com"
 WINDOW = timedelta(minutes=15)
 UID_WINDOW = 64
@@ -57,7 +57,7 @@ class Request:
 
     @property
     def recipient(self) -> str:
-        return "vault+" + self.folder + "@begam.in"
+        return "vault+" + self.folder + "@example.com"
 
 
 def address(value: str) -> str:

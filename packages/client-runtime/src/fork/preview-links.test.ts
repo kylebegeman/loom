@@ -23,7 +23,7 @@ const at = (offset: number) => DateTime.formatIso(DateTime.makeUnsafe(NOW + offs
 function page(overrides: Partial<PreviewPage> = {}): PreviewPage {
   return {
     id: "page",
-    url: "https://pages.bagels.top/p/page",
+    url: "https://pages.example.net/p/page",
     title: "Release notes",
     kind: "html",
     projectId: ProjectId.make("project"),
@@ -46,8 +46,8 @@ describe("previewLibraryStatus", () => {
   const setup = (library?: PreviewLinksSetup["library"]): PreviewLinksSetup => ({
     settings: {
       enabled: true,
-      suffix: "bagels.top",
-      machine: "dorothy",
+      suffix: "example.net",
+      machine: "maple",
       defaultLifetime: "12h",
       gatewayPort: 3779,
     },
@@ -171,14 +171,14 @@ describe("previewPageControls", () => {
   });
 
   it("never opens an address that is not https", () => {
-    for (const url of ["javascript:alert(1)", "http://pages.bagels.top/p/page", "https:///p"]) {
+    for (const url of ["javascript:alert(1)", "http://pages.example.net/p/page", "https:///p"]) {
       expect(previewPageControls(page({ url }), true, NOW)[0]).toEqual({
         control: "open",
         enabled: false,
       });
     }
     expect(
-      previewPageControls(page({ url: "HTTPS://pages.bagels.top/p/x" }), true, NOW)[0],
+      previewPageControls(page({ url: "HTTPS://pages.example.net/p/x" }), true, NOW)[0],
     ).toEqual({ control: "open", enabled: true });
   });
 
@@ -209,8 +209,8 @@ describe("previewLinkBackingLabel", () => {
       id: "link",
       kind: "port",
       port: 41_002,
-      host: "41002-k3f9x2-dorothy.bagels.top",
-      url: "https://41002-k3f9x2-dorothy.bagels.top/",
+      host: "41002-k3f9x2-maple.example.net",
+      url: "https://41002-k3f9x2-maple.example.net/",
       createdBy: "agent",
       threadId: ThreadId.make("thread"),
       laneId: "lane",
@@ -277,9 +277,9 @@ describe("previewLinkSetupStatus", () => {
     readonly gateway?: PreviewLinksSetup["gateway"];
   }): PreviewLinksSetup {
     const enabled = overrides.enabled ?? true;
-    const suffix = overrides.suffix === undefined ? "bagels.top" : overrides.suffix;
+    const suffix = overrides.suffix === undefined ? "example.net" : overrides.suffix;
     return {
-      settings: { enabled, suffix, machine: "dorothy", defaultLifetime: "12h", gatewayPort: 3779 },
+      settings: { enabled, suffix, machine: "maple", defaultLifetime: "12h", gatewayPort: 3779 },
       tokenStored: true,
       ready: enabled && suffix !== null,
       tunnel: overrides.tunnel ?? { state: "connected", message: null },
@@ -311,7 +311,7 @@ describe("previewLinkSetupStatus", () => {
       previewLinkSetupStatus(setup({ gateway: { state: "off", message: "Starting." } })).ready,
     ).toBe(false);
     expect(previewLinkSetupStatus(setup({}))).toEqual({
-      label: "Ready on bagels.top",
+      label: "Ready on example.net",
       detail: null,
       ready: true,
     });

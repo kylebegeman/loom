@@ -20,7 +20,7 @@ thing he can open:
 
   ```
   https://<port>-<share>-<machine>.<domain>/
-  https://5173-k3f9x2-dorothy.example.com/
+  https://5173-k3f9x2-maple.example.com/
   ```
 
   `port` is the local port, `share` is six random lowercase letters or digits, fresh for each
@@ -144,7 +144,7 @@ still shows an error, now pointing at Settings > Loom > Previews.
 
 ## Decisions
 
-- Domain `bagels.top` for Kyle's own setup (2026-10-18); any Cloudflare zone works.
+- Domain `example.net` for Kyle's own setup (2026-10-18); any Cloudflare zone works.
 - One label per host, for Cloudflare's free Universal SSL.
 - Entry codes and a host-only cookie instead of bearer URLs, so links in transcripts are not
   credentials. See [TECHNICAL.md](./TECHNICAL.md#security-reasoning).
@@ -152,7 +152,7 @@ still shows an error, now pointing at Settings > Loom > Previews.
   hosts each computer serves, so it can sign browsers in for them.
 - Library sign-in uses the Library's own login, so a browser on any device gets in without a
   Loom client, and the computer never sees the user's Library credentials.
-- Pages live in the Library at `pages.bagels.top` so they outlive the computer: a page stays
+- Pages live in the Library at `pages.example.net` so they outlive the computer: a page stays
   readable while the computer sleeps, and replies wait there for it.
 - Pages get their own host, never the Library's, so a published page cannot reach the
   Library's app or API with the reader's session.

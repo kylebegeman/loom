@@ -34,13 +34,13 @@ it("keeps the chosen layout and computer draft across navigation and computer re
       else localStorage.setItem(layoutKey, savedLayout);
     },
   };
-  const dorothy = computer("Dorothy");
+  const maple = computer("Maple");
   const vps = computer("VPS");
   const content = (environments: readonly EnvironmentPresentation[], visit = "initial") => (
     <ComputersSettingsPage supervisor={<p>Supervisor</p>}>
       <ComputerConnectionsHome
         key={visit}
-        primaryEnvironment={dorothy}
+        primaryEnvironment={maple}
         environments={environments}
         isReady
         discoveredRows={null}
@@ -50,7 +50,7 @@ it("keeps the chosen layout and computer draft across navigation and computer re
       />
     </ComputersSettingsPage>
   );
-  await using screen = await render(content([dorothy, vps]), { router: "/settings/connections" });
+  await using screen = await render(content([maple, vps]), { router: "/settings/connections" });
   await expect
     .element(screen.getByRole("button", { name: "Cards", exact: true }))
     .toHaveAttribute("aria-pressed", "true");
@@ -73,16 +73,16 @@ it("keeps the chosen layout and computer draft across navigation and computer re
     .element(screen.getByRole("button", { name: "List", exact: true }))
     .toHaveAttribute("aria-pressed", "true");
   await screen.getByRole("button", { name: "Open VPS", exact: true }).click();
-  await screen.rerender(content([dorothy]));
+  await screen.rerender(content([maple]));
   await expect
-    .element(screen.getByRole("button", { name: "Open Dorothy", exact: true }))
+    .element(screen.getByRole("button", { name: "Open Maple", exact: true }))
     .toBeVisible();
   await expect
     .element(screen.getByRole("textbox", { name: "Settings for VPS" }))
     .not.toBeInTheDocument();
-  await screen.rerender(content([dorothy, vps]));
+  await screen.rerender(content([maple, vps]));
   await expect.element(screen.getByRole("button", { name: "Open VPS", exact: true })).toBeVisible();
-  await screen.rerender(content([dorothy, vps], "reopened"));
+  await screen.rerender(content([maple, vps], "reopened"));
   await expect
     .element(screen.getByRole("button", { name: "List", exact: true }))
     .toHaveAttribute("aria-pressed", "true");

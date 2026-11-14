@@ -38,12 +38,12 @@ vi.mock("../state/entities", () => ({
   useVisibleThreadShells: () => [],
 }));
 vi.mock("../state/environments", () => ({
-  useConnectedEnvironmentIds: () => ["dorothy"],
+  useConnectedEnvironmentIds: () => ["maple"],
   useEnvironments: () => ({ environments: [], isReady: true }),
 }));
 vi.mock("../lib/indexDraftLanding", () => ({
   resolveIndexDraftProject: () => ({
-    environmentId: EnvironmentId.make("dorothy"),
+    environmentId: EnvironmentId.make("maple"),
     id: ProjectId.make("loom"),
   }),
 }));

@@ -28,7 +28,7 @@ vi.mock("./state", () => ({
     environments: [
       {
         environmentId: "host",
-        label: "Dorothy",
+        label: "Maple",
         connection: { phase: state.hostConnected ? "connected" : "disconnected" },
       },
     ],
@@ -104,7 +104,7 @@ it.each([
   ["canRemove", "You do not have permission to remove files on this computer."],
   ["canRegister", "You do not have permission to register copies in the Library."],
   ["connected", "Connect to your Library to remove these files."],
-  ["hostConnected", "Dorothy is offline."],
+  ["hostConnected", "Maple is offline."],
 ] as const)("explains the disabled removal when %s is false", async (field, reason) => {
   state[field] = false;
   await render();

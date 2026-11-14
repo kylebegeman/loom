@@ -164,7 +164,7 @@ export const syntheticBrokerMail = Effect.fn("SyntheticBrokerMail.read")(functio
       const observed = yield* decode(raw).pipe(
         Effect.mapError(() => new VaultError({ reason: "unavailable" })),
       );
-      const recipient = `vault+loom-${binding.correlationId}@begam.in`;
+      const recipient = `vault+loom-${binding.correlationId}@example.com`;
       const status =
         observed.messageUids.length > 0
           ? "found"

@@ -92,8 +92,8 @@ const session = cookieSession("session-1");
 
 const ready: PreviewLinksSettings = {
   enabled: true,
-  suffix: "bagels.top",
-  machine: "dorothy",
+  suffix: "example.net",
+  machine: "maple",
   defaultLifetime: "12h",
   gatewayPort: 3779,
 };
@@ -587,7 +587,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
             ? { enabled: false }
             : { enabled: true, registerPreviews: options.library.registerPreviews },
         ),
-        Layer.succeed(HostProcess.Hostname, "Dorothy.local"),
+        Layer.succeed(HostProcess.Hostname, "Maple.local"),
         Layer.succeed(ProcessRunner.ProcessRunner, docker.runner),
         Layer.succeed(CloudflaredExtraPorts, { ports: () => [...connectorPorts] }),
       ),
@@ -698,7 +698,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         settings: {
           enabled: false,
           suffix: null,
-          machine: "dorothy",
+          machine: "maple",
           defaultLifetime: "12h",
           gatewayPort: 3779,
         },
@@ -725,7 +725,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* first.service.configure({ settings: ready });
       const start = yield* Clock.currentTimeMillis;
       const link = yield* first.service.share({ port: 5173 }, owner);
-      expect(link.host).toMatch(/^5173-[a-z0-9]{6}-dorothy\.bagels\.top$/);
+      expect(link.host).toMatch(/^5173-[a-z0-9]{6}-maple\.example\.net$/);
       expect(link.url).toBe(`https://${link.host}/`);
       expect(link.expiresAt).toBe(isoAt(start + 12 * HOUR));
       expect((yield* first.service.share({ port: 5173, lifetime: "1h" }, owner)).id).toBe(link.id);
@@ -851,7 +851,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(entry.url.startsWith(`https://${link.host}/__loom/enter?code=`)).toBe(true);
       expect(codeOf(entry.url)).toMatch(/^[A-Za-z0-9_-]{22}$/);
       // A code shown to the wrong host is spent, not left for replay.
-      expect(view.redeem("5173-zzzzzz-dorothy.bagels.top", codeOf(entry.url))).toBeNull();
+      expect(view.redeem("5173-zzzzzz-maple.example.net", codeOf(entry.url))).toBeNull();
       expect(view.redeem(link.host, codeOf(entry.url))).toBeNull();
 
       const deep = yield* harness.service.open({ link: `${link.url}app?tab=1#top` }, session);
@@ -889,7 +889,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
           );
       const first = yield* enter("session-1");
       const second = yield* enter("session-2");
-      expect(view.authorize("3000-zzzzzz-dorothy.bagels.top", first)).toBeNull();
+      expect(view.authorize("3000-zzzzzz-maple.example.net", first)).toBeNull();
 
       yield* harness.removeSession("session-1");
       const dropped = yield* Queue.take(harness.gateway.destroyed);
@@ -1356,7 +1356,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const library = yield* makeLibrary;
       const harness = yield* makeHarness({ library });
       yield* harness.service.configure({ settings: ready });
-      yield* expectRegistrations(library, { machine: "dorothy", suffix: "bagels.top" });
+      yield* expectRegistrations(library, { machine: "maple", suffix: "example.net" });
       const link = yield* harness.service.share({ port: 5173 }, owner);
       const view = yield* harness.view;
       expect(view.libraryAccess()).toEqual({
@@ -1367,7 +1367,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const nonce = randomPreviewNonce();
       const ticket = library.ticket(link.host, nonce, nowMs);
       // Refused without being spent: another host, another browser's nonce, or no nonce.
-      expect(view.redeemTicket("5174-aaaaaa-dorothy.bagels.top", ticket, nonce, "/")).toBeNull();
+      expect(view.redeemTicket("5174-aaaaaa-maple.example.net", ticket, nonce, "/")).toBeNull();
       expect(view.redeemTicket(link.host, ticket, randomPreviewNonce(), "/")).toBeNull();
       expect(view.redeemTicket(link.host, ticket, "", "/")).toBeNull();
 
@@ -1483,7 +1483,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
     Effect.gen(function* () {
       const library = yield* makeLibrary;
       const harness = yield* makeHarness({ library });
-      const previews = { machine: "dorothy", suffix: "bagels.top" };
+      const previews = { machine: "maple", suffix: "example.net" };
       const signIn = { origin: LIBRARY_ORIGIN, ticketPath: library.access.ticketPath };
       yield* harness.service.configure({ settings: ready });
       yield* expectRegistrations(library, previews);
@@ -1522,8 +1522,8 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* Queue.clear(library.calls);
       yield* TestClock.adjust("30 minutes");
       expect(yield* Queue.take(library.calls)).toEqual({
-        machine: "dorothy",
-        suffix: "bagels.top",
+        machine: "maple",
+        suffix: "example.net",
       });
     }),
   );
@@ -1539,16 +1539,16 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         yield* Queue.clear(library.calls);
         view.libraryAccess();
         expect(yield* Queue.take(library.calls)).toEqual({
-          machine: "dorothy",
-          suffix: "bagels.top",
+          machine: "maple",
+          suffix: "example.net",
         });
         for (let index = 0; index < 10; index += 1) view.libraryAccess();
         expect(yield* Queue.clear(library.calls)).toEqual([]);
         yield* TestClock.adjust("30 seconds");
         view.libraryAccess();
         expect(yield* Queue.take(library.calls)).toEqual({
-          machine: "dorothy",
-          suffix: "bagels.top",
+          machine: "maple",
+          suffix: "example.net",
         });
       }),
   );
@@ -1583,7 +1583,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
 
       library.answer(Effect.succeed(library.access));
       const renamed = yield* harness.service.configure({
-        settings: { ...ready, machine: "nora" },
+        settings: { ...ready, machine: "juniper" },
       });
       expect(renamed.library).toEqual({ state: "registered", message: null });
       const off = yield* harness.service.configure({ settings: { ...ready, enabled: false } });

@@ -1,0 +1,49 @@
+# Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
+#
+# Fails a pull request or a push to main that adds a personal identifier: a real
+# tailnet name, a home directory under a real account, a real-looking UUID
+# outside test fixtures, or an entry of the private deny list. The deny list is
+# the LOOM_PERSONAL_DENYLIST secret, so GitHub masks its entries in the log.
+# See docs/fork/operations/personal-identifiers.md.
+name: Loom personal identifiers
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      # Lines upstream already carries are exempt; the check finds them through upstream's release tags.
+      - name: Fetch upstream release tags
+        run: git fetch -q --no-tags https://github.com/pingdotgg/t3code.git 'refs/tags/v*:refs/tags/v*'
+
+      - name: Check
+        env:
+          LOOM_PERSONAL_DENYLIST: ${{ secrets.LOOM_PERSONAL_DENYLIST }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$LOOM_PERSONAL_DENYLIST" ]; then
+            echo "::warning::The LOOM_PERSONAL_DENYLIST secret is not set, so only the generic patterns run."
+          fi
+          # A new branch's push has no previous commit to compare against.
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE=$(git merge-base origin/main HEAD)
+          fi
+          node scripts/fork/personal-identifiers.ts --base "$(git merge-base "$BASE" HEAD)"

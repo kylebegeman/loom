@@ -119,7 +119,7 @@ proof that a managed Vault exists:
   already supplies Pi system context. Credential access needs execution integration, not more
   credential-bearing prompt text.
 
-Kyle identified repeated approvals by a personal SSH key manager on Dorothy. Machine inspection
+Kyle identified repeated approvals by a personal SSH key manager on Maple. Machine inspection
 in this design conversation confirmed GitHub SSH used the 1Password agent. This is problem
 context, not machine configuration committed here or a claim that every authentication error
 has the same cause.
@@ -127,7 +127,7 @@ has the same cause.
 ## Proposed responsibilities
 
 **Central authority:** encrypted records, versions, principal/grant administration, authenticated
-leases, requests and minimum audit. Candidate home is Kyle's VPS with verified begam.in/platform
+leases, requests and minimum audit. Candidate home is Kyle's VPS with verified example.com/platform
 identity integration. Expose a versioned service API independent of the Loom transport.
 
 **Execution-host broker:** machine/workload authentication, bounded lease acquisition, per-workload
@@ -361,7 +361,7 @@ new public endpoint, installing production dependencies or deploying a database.
 - Backend adapters prove encrypted persistence, wrong-key/corruption failures, idempotency and restore.
 - Broker tests prove launch identity, service restart, bounded outage behavior and cleanup.
 - Policy tests prove no escalation through delegation, aliases, retries or changed revisions.
-- Integration proves Dorothy-style SSH/GitHub work without personal approval, across runners and remote clients.
+- Integration proves Maple-style SSH/GitHub work without personal approval, across runners and remote clients.
 - Client verification covers loading/empty/error/unsupported states, keyboard/screen-reader access and reverse actions.
 
 Each packet owns its focused behavior checks. Run actual tests and relevant consumer typechecks

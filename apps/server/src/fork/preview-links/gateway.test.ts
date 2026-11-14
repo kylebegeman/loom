@@ -14,9 +14,9 @@ import {
   type PreviewLibraryAccess,
 } from "./types.ts";
 
-const LINK_HOST = "5173-abc123-dorothy.bagels.top";
-const ENDED_HOST = "5174-ended1-dorothy.bagels.top";
-const DENIED_HOST = "5175-denied-dorothy.bagels.top";
+const LINK_HOST = "5173-abc123-maple.example.net";
+const ENDED_HOST = "5174-ended1-maple.example.net";
+const DENIED_HOST = "5175-denied-maple.example.net";
 const GOOD_COOKIE = "signed.value";
 const ORIGIN = `https://${LINK_HOST}`;
 const NO_SOCKET_PATH = "/no-socket-here";
@@ -630,7 +630,7 @@ describe("preview gateway", () => {
         path: "/form",
         headers: {
           ...signedIn,
-          origin: "https://5174-zzzzzz-dorothy.bagels.top",
+          origin: "https://5174-zzzzzz-maple.example.net",
           "sec-fetch-mode": "navigate",
         },
         body: ["x"],

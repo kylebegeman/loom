@@ -3,7 +3,7 @@
 ## Overview
 
 ```text
-Dorothy (requester)                     Library authority (VPS)                  Mini 2 (target)
+Maple (requester)                     Library authority (VPS)                  Mini 2 (target)
 share ─▶ BotLibraryClient.publish ───▶ fork_bots_library_bots (revisions) ◀── BotLibrarySync pull
                                                                               ─▶ linked local bot
                                         fork_bots_library_status ◀──────────── status every 60 s
@@ -39,20 +39,20 @@ it, the Bots page shows "Your Library does not support shared bots yet."
 - `BOTS_ANYWHERE_FEATURE = "bots-anywhere"`, `BOTS_MAX_VAULT_SLOTS = 16` (the
   `VaultReadinessInput` requirement cap, `packages/contracts/src/fork/vault-access.ts:142-146`).
 - `BotLibraryLink = { libraryBotId, revision, libraryProjectId: NullOr(LibraryId), syncedAt,
-modelOverride: NullOr(ModelSelection) }`. `BotDefinition` gains `library:
-optionalKey(NullOr(BotLibraryLink))`. An optional key, not a new `BotOrigin` member, because
+  modelOverride: NullOr(ModelSelection) }`. `BotDefinition` gains `library:
+  optionalKey(NullOr(BotLibraryLink))`. An optional key, not a new `BotOrigin` member, because
   a new union member fails to decode on older clients.
 - `BotVaultSlot = { name (slug, at most 40), label (at most 80), action: VaultAccessAction,
-destination: optionalKey(...) }`. `BotDefinitionInput` gains `vaultSlots:
-optionalKey(Array(BotVaultSlot))`, at most 16.
+  destination: optionalKey(...) }`. `BotDefinitionInput` gains `vaultSlots:
+  optionalKey(Array(BotVaultSlot))`, at most 16.
 - `BotTarget = Union({ type: "here" }, { type: "environment", environmentId }, { type: "best" })`,
   a new struct used only in inputs. `BotsRunInput`, `BotsBatchInput` (L93) and `BotPipelineStep`
   (L99) gain `target: optionalKey(BotTarget)`; absent means here.
 - `BotRun` gains `ranOn: optionalKey(NullOr({ environmentId, label, threadId: NullOr(ThreadId)
-}))` on the requester and `requestedBy: optionalKey(NullOr({ environmentId, label }))` on the
+  }))` on the requester and `requestedBy: optionalKey(NullOr({ environmentId, label }))` on the
   target.
 - `BotTargetReadiness = { environmentId, label, isThisComputer, online, ready, freeSlots,
-reasons: Array(String) }`.
+  reasons: Array(String) }`.
 
 | Tag                           | Payload                                | Success                | Scope                   |
 | ----------------------------- | -------------------------------------- | ---------------------- | ----------------------- |
@@ -217,10 +217,10 @@ Migration 12 `Anywhere` (next free id if another bots migration landed first):
   `fork_bots_library_cursor(key TEXT PRIMARY KEY, value TEXT NOT NULL)`.
 - Library side (created everywhere, used only on the authority):
   `fork_bots_library_bots(id, revision, seq, definition_json, project_id, updated_by, updated_at,
-deleted_at)`, `fork_bots_library_status(environment_id PRIMARY KEY, report_json,
-reported_at)`, `fork_bots_library_requests(id PRIMARY KEY, from_env, target_env, message_json,
-state, leased_until, created_at)`, `fork_bots_library_results(request_id, seq, to_env,
-update_json, leased_until, acked_at, PRIMARY KEY (request_id, seq))`.
+  deleted_at)`, `fork_bots_library_status(environment_id PRIMARY KEY, report_json,
+  reported_at)`, `fork_bots_library_requests(id PRIMARY KEY, from_env, target_env, message_json,
+  state, leased_until, created_at)`, `fork_bots_library_results(request_id, seq, to_env,
+  update_json, leased_until, acked_at, PRIMARY KEY (request_id, seq))`.
 
 ## Clients
 

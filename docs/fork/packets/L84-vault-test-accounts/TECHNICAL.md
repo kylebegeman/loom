@@ -65,7 +65,7 @@ cancels the local lease; restore returns to quarantine. Archiving/restoring coll
 while they have active reservations. Nothing terminates an external login, resets app data,
 revokes an upstream token or promises isolation of a full-access process. Reset/provision/mail
 and browser/native login adapters remain unavailable. Kyle selected an isolated Loom target
-and Migadu. Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests.
+and Migadu. Kyle confirmed that `vault@example.com` exists and is dedicated to Vault tests.
 That confirmation does not enable the adapters or prove reader access or live delivery.
 
 Web and mobile use a shared action/expiry helper, bounded metadata snapshots and explicit
@@ -355,7 +355,7 @@ account provisioning, browser-session revocation, application data reset or work
 No Vault store, policy, journal, schema, execution flag or public transport is changed.
 
 Migadu is selected independently of Loom runtime pairing, which has no email verification step.
-Kyle confirmed `vault@begam.in` exists and is dedicated to Vault tests. A dedicated read
+Kyle confirmed `vault@example.com` exists and is dedicated to Vault tests. A dedicated read
 credential and real delivery check are still required. Migadu plus recipients normally route to
 auto-created `loom-<run-id>` folders, unless the mail owner applies the reviewed Pattern Rewrite
 to Inbox. Reader correlation, retention and cleanup must cover the chosen routing. Use IMAP for
@@ -375,7 +375,7 @@ explicit test connection refuses before authentication. Its fixed-host verified-
 is exercised against a disposable loopback server; no live Migadu session is opened. Python
 3.13 or newer is required for strict address parsing, with an explicit refusal on older versions.
 
-A request binds a fresh 32-hex run ID, the derived `vault+loom-<run-id>@begam.in` recipient, an
+A request binds a fresh 32-hex run ID, the derived `vault+loom-<run-id>@example.com` recipient, an
 expected sender and a fifteen-minute window. It EXAMINEs the exact tag folder, then Inbox if that
 folder is unavailable; it never enumerates folders. UID SEARCH covers at most the latest 64
 possible UIDs below the observed UIDNEXT. Header PEEK filters sender, recipient and server

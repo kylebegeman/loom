@@ -17,7 +17,7 @@ existing API-key interface and the desktop's Secret Service through `secret-tool
 ./deploy/omarchy/install.sh \
   --profile laptop \
   --loom-executable "$HOME/.local/lib/loom/Loom.AppImage" \
-  --office-url https://office.begam.in \
+  --office-url https://YOUR-PRIVATE-OFFICE-ORIGIN \
   --office-cli "$HOME/.local/bin/office-cli" \
   --atlas-url https://YOUR-PRIVATE-ATLAS-ORIGIN \
   --atlas-cli "$HOME/.local/bin/atlas" \
@@ -239,7 +239,7 @@ The upstream command checks the running environment, refuses an HTTPS route owne
 by another environment and prints its one-time link with the normal five-minute
 expiry and standard client scopes. `--tailscale-serve-port PORT` selects another
 HTTPS port. Private Serve mappings persist across reboot and stay separate from
-Dorothy's AI hub. Join both devices to the tailnet and grant the workstation's
+the AI hub. Join both devices to the tailnet and grant the workstation's
 normal user Tailscale operator access during local commissioning if needed.
 Device revocation and route removal follow [Using LoomOS](../../docs/fork/user/loom-os.md#connect-another-device).
 
@@ -460,9 +460,9 @@ explicit. See [Using LoomOS](../../docs/fork/user/loom-os.md#private-ai-status-a
 
 ## Implementation packets
 
-Kyle selected 17 further improvements, excluding saved project workspaces (#14).
-The [packet review](packets/README.md) records their scope, dependencies and
-acceptance. Approved packets are not completion claims.
+Seventeen further improvements were selected, excluding saved project workspaces (#14).
+Their packet review, with scope, dependencies, acceptance and rollout evidence, lives in
+the maintainer's private platform repository. Approved packets are not completion claims.
 
 The searchable **Loom actions** launcher/menu uses the same existing operations.
 `loom-os actions --query "mail"` opens it with an initial filter;

@@ -11,15 +11,15 @@ import {
 } from "./preview-link-navigation.ts";
 
 const LOCAL = EnvironmentId.make("env-local");
-const REMOTE = EnvironmentId.make("env-dorothy");
+const REMOTE = EnvironmentId.make("env-maple");
 const OTHER = EnvironmentId.make("env-other");
 
 const link = (port: number, id = `link-${port}`): PreviewLink => ({
   id,
   kind: "port",
   port,
-  host: `${port}-k3f9x2-dorothy.bagels.top`,
-  url: `https://${port}-k3f9x2-dorothy.bagels.top/`,
+  host: `${port}-k3f9x2-maple.example.net`,
+  url: `https://${port}-k3f9x2-maple.example.net/`,
   createdBy: "owner",
   threadId: null,
   laneId: null,
@@ -40,7 +40,7 @@ function makeDeps(overrides: Partial<PreviewNavigationDeps> = {}) {
   const open = vi.fn<PreviewNavigationDeps["open"]>(async (_env, input) => {
     const port = Number(/^link-(\d+)$/.exec(input.link)?.[1] ?? 5173);
     return {
-      url: `https://${port}-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc`,
+      url: `https://${port}-k3f9x2-maple.example.net/__loom/enter?code=abc`,
       link: link(port),
     };
   });
@@ -50,7 +50,7 @@ function makeDeps(overrides: Partial<PreviewNavigationDeps> = {}) {
     reachesLoopback: (environmentId) => environmentId === LOCAL,
     privateNetworkUrl: () => null,
     keepsTypedLoopbackOnPrivateNetwork: true,
-    environmentLabel: () => "Dorothy",
+    environmentLabel: () => "Maple",
     settingsPath: "Settings > Loom > Previews",
     share,
     open,
@@ -93,7 +93,7 @@ describe("loopback URLs", () => {
         environmentId: REMOTE,
         runtime: undefined,
       }),
-    ).resolves.toBe("https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc");
+    ).resolves.toBe("https://5173-k3f9x2-maple.example.net/__loom/enter?code=abc");
     expect(share).toHaveBeenCalledWith(REMOTE, { port: 5173 });
     expect(open).toHaveBeenCalledWith(REMOTE, {
       link: "link-5173",
@@ -139,7 +139,7 @@ describe("loopback URLs", () => {
         environmentId: REMOTE,
         runtime: undefined,
       }),
-    ).rejects.toThrow(/not set up on Dorothy.*Settings > Loom > Previews/);
+    ).rejects.toThrow(/not set up on Maple.*Settings > Loom > Previews/);
   });
 
   it("explains a connection without preview access", async () => {
@@ -157,7 +157,7 @@ describe("loopback URLs", () => {
         environmentId: REMOTE,
         runtime: undefined,
       }),
-    ).rejects.toThrow(/cannot share ports on Dorothy/);
+    ).rejects.toThrow(/cannot share ports on Maple/);
   });
 
   it("passes other share failures through", async () => {
@@ -219,7 +219,7 @@ describe("loopback URLs", () => {
 });
 
 describe("preview link URLs", () => {
-  const agentLink = "https://5173-k3f9x2-dorothy.bagels.top/settings?x=1";
+  const agentLink = "https://5173-k3f9x2-maple.example.net/settings?x=1";
 
   it("opens a fresh entry on the thread's own environment", async () => {
     const { deps, open } = makeDeps();
@@ -229,7 +229,7 @@ describe("preview link URLs", () => {
         environmentId: REMOTE,
         runtime: undefined,
       }),
-    ).resolves.toBe("https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc");
+    ).resolves.toBe("https://5173-k3f9x2-maple.example.net/__loom/enter?code=abc");
     expect(open).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith(REMOTE, { link: agentLink, path: "/settings?x=1" });
   });
@@ -339,12 +339,12 @@ describe("preview link URLs", () => {
   it("lands a stale entry on the root instead of replaying its code", async () => {
     const { deps, open } = makeDeps();
     await resolvePreviewNavigationWith(deps, {
-      url: "https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=old",
+      url: "https://5173-k3f9x2-maple.example.net/__loom/enter?code=old",
       environmentId: REMOTE,
       runtime: undefined,
     });
     expect(open).toHaveBeenCalledWith(REMOTE, {
-      link: "https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=old",
+      link: "https://5173-k3f9x2-maple.example.net/__loom/enter?code=old",
       path: "/",
     });
   });
@@ -370,7 +370,7 @@ describe("landingPath", () => {
   });
 
   it("never lands on a gateway page", () => {
-    expect(landingPath(new URL("https://x.bagels.top/__loom/enter?code=1"))).toBe("/");
+    expect(landingPath(new URL("https://x.example.net/__loom/enter?code=1"))).toBe("/");
   });
 });
 
@@ -402,13 +402,13 @@ describe("navigablePreviewUrlWith", () => {
 });
 
 describe("previewLinkEntryUrlWith", () => {
-  const LINK = "https://5173-k3f9x2-dorothy.bagels.top/app?x=1";
+  const LINK = "https://5173-k3f9x2-maple.example.net/app?x=1";
 
   it("asks each connected computer until one serves the link", async () => {
     const { deps, open } = makeDeps({ previewLinkEnvironments: () => [OTHER, REMOTE] });
     open.mockRejectedValueOnce(notFound());
     await expect(previewLinkEntryUrlWith(deps, LINK)).resolves.toBe(
-      "https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc",
+      "https://5173-k3f9x2-maple.example.net/__loom/enter?code=abc",
     );
     expect(open.mock.calls.map(([environmentId]) => environmentId)).toEqual([OTHER, REMOTE]);
     expect(open).toHaveBeenLastCalledWith(REMOTE, { link: LINK, path: "/app?x=1" });

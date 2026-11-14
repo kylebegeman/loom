@@ -554,7 +554,7 @@ separate. A process with the same OS permissions can still read broker identity 
 ## Run a mediated SSH command
 
 Loom can run a bounded SSH command from its server using a dedicated Vault key. The target
-must be reachable from that server. This does not configure Dorothy's local SSH agent, rewrite
+must be reachable from that server. This does not configure your computer's local SSH agent, rewrite
 Git remotes or attach credentials automatically to Pi or other providers.
 
 Use an authenticated full-access administrator MCP client for `loom_vault_ssh_generate` and

@@ -7,33 +7,33 @@ parts") are removed; git history keeps them.
 
 ## Old Loom
 
-P10 in [selections.md](../../selections.md). Old Loom (`bagelvault/loom` 0.13.10):
+P10 in [selections.md](../../selections.md). Old Loom (the old private Loom repository 0.13.10):
 
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/bottomPanelStore.ts
+- `apps/web/src/bottomPanelStore.ts`
   (613 lines). Keep: per-thread state keyed by scoped thread key, a persisted store with a
   version, singleton non-terminal tabs. Drop: up to three columns with percentage widths and
   module-counter column ids (not stable across sessions), and the hand-written migration.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/bottomPanelSurfaceRegistry.ts
+- `apps/web/src/bottomPanelSurfaceRegistry.ts`
   (103 lines: tab ids, labels, icons, order). Keep the registry idea; this packet's
   `DOCK_TABS` is the same shape, smaller.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/BottomPanelTabs.tsx
+- `apps/web/src/components/BottomPanelTabs.tsx`
   (302 lines). Adapt: the per-frame drag handle. Drop: sliding the dock away with a negative
   `marginBottom` (upstream's grid-rows transition is the house style now).
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/regionPanelStore.ts
-  (500 lines) and https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/terminal/openDockTerminalSurface.ts
+- `apps/web/src/regionPanelStore.ts`
+  (500 lines) and `apps/web/src/terminal/openDockTerminalSurface.ts`
   (54 lines). Drop: two stores kept in sync by hand after every action; this packet derives
   the view from upstream's terminal store plus one fork store.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/panelLayout.ts (232 lines;
+- `apps/web/src/panelLayout.ts` (232 lines;
   `DOCK_MIN_HEIGHT = 180`, `DOCK_MAX_HEIGHT_RATIO = 0.72`, `clampDockHeight`). Keep the single
   clamp function; use upstream's 0.75 ratio so tabs match the terminal.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/chat/ThreadRuntimePanels.tsx
+- `apps/web/src/components/chat/ThreadRuntimePanels.tsx`
   (1,890 lines). `ThreadTasksPanel` (lines 347-461) was plan steps and pending requests, not
   scripts; this packet's Tasks is project scripts and commands as the brief asks.
   `ThreadApprovalsPanel` (619-866) read a cross-thread decisions API and polled secret
   requirements every 5 s; drop both (upstream has neither) and note its counter bug
   (lines 755 and 763 show the same number). `ThreadRunLedgerPanel` (463-516) and
   `ThreadRunPacketsPanel` (1429-1890): dropped by the brief.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/ChatView.tsx
+- `apps/web/src/components/ChatView.tsx`
   (12,528 lines; `renderBottomPanelSurface` at 11916, `runProjectScript` at 5916-6005). The
   main lesson: old Loom put all dock wiring inside ChatView; this packet keeps ChatView to a
   three-line seam.

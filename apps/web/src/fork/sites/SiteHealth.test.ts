@@ -218,8 +218,8 @@ describe("checkVitals", () => {
 
 describe("siteFaviconUrl", () => {
   it("asks the site's origin for its icon", () => {
-    expect(siteFaviconUrl("https://pages.bagels.top/blog?x=1")).toBe(
-      "https://pages.bagels.top/favicon.ico",
+    expect(siteFaviconUrl("https://pages.example.net/blog?x=1")).toBe(
+      "https://pages.example.net/favicon.ico",
     );
   });
 

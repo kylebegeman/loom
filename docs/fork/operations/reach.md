@@ -15,12 +15,10 @@ for it. Its connector forwards to the server over loopback, so its server must l
 `127.0.0.1`, `::1` or every address; one bound to a single LAN or tailnet address shows an
 error and never asks the Library.
 
-Current state: people see this feature as Loomhost. The hosted Library hosts computers on
-`loomhost.dev`, a zone in its own Cloudflare account (the one signed up as admin@boop.at), not
-Kyle's personal account. Its token (`loom-host-library`, filtered to personal-vps's egress
-addresses) and a dedicated Pocket ID admin API key are files under the Library's state volume
-`credentials/`. Rotating either one means replacing its file, with no restart. Dorothy has
-`dorothy-loom.loomhost.dev`; a phone reaches it through the tunnel with a passkey sign-in.
+A hosted Library keeps its Cloudflare token, ideally filtered to the Library host's egress
+addresses, and a dedicated Pocket ID admin API key as files under its state volume
+`credentials/`. Rotating either one means replacing its file, with no restart. The
+maintainer's own zone, account and hosts are recorded in the private platform repository.
 
 ## Choose the zone
 
@@ -28,8 +26,8 @@ addresses) and a dedicated Pocket ID admin API key are files under the Library's
   SSL certificate covers only one level of subdomain. A taken name gets a number,
   `<name>-2-loom.<zone>`.
 - Use a zone that does nothing but reach, ideally in its own Cloudflare account. The token needs
-  DNS edit rights on the zone, so on `begam.in` a leaked token could repoint `id.loom.begam.in`
-  or the Library itself. The zone can change later, at the cost of every computer's address
+  DNS edit rights on the zone, so on a zone that also serves Identity a leaked token could
+  repoint the Identity host or the Library itself. The zone can change later, at the cost of every computer's address
   (see [Change the zone](#change-the-zone)).
 - The rate-limit rule matches paths only, so it applies to the whole zone: `/oauth/token`,
   `/api/auth/session`, `/api/auth/websocket-ticket` and `/api/loom/identity/session` on every host
@@ -155,7 +153,7 @@ Library's allowlist when shared, and the 7-day limit) and the other `LOOM_IDENTI
 they take precedence over the saved values.
 
 The 7-day default is the native client's refresh lifetime in Pocket ID
-(`refreshTokenDurationMinutes: 10080` in loom-platform's `deploy/identity/clients.yaml`), which
+(`refreshTokenDurationMinutes: 10080` in the Identity client configuration), which
 ends a refresh grant left unused that long. A longer limit only helps devices used at least
 weekly. Desktop and iPhone builds without sign-in renewal cannot sign in once a limit is set.
 
@@ -174,9 +172,8 @@ weekly. Desktop and iPhone builds without sign-in renewal cannot sign in once a 
    `LOOM_IDENTITY_REQUIRE_PASSKEY=true` on the Library. Only the exact value `true` is accepted,
    any other value stops Identity from starting, and sessions rotate once. After a Pocket ID
    upgrade, decode one native ID token, first and after a refresh, to confirm `amr` again.
-3. In loom-platform, the native client keeps a refresh grant for 10080 minutes with
-   `skipConsent` on (`deploy/identity/clients.yaml`, main since `1530fa9`). Confirm the live
-   Pocket ID was applied from it.
+3. Give the native client a refresh grant of 10080 minutes with `skipConsent` on in the
+   Identity client configuration, and confirm the live Pocket ID was applied from it.
 4. On the Library, install the token file and the Pocket ID key file, set the variables and
    restart. Confirm which hosts in the zone are proxied. The hosted Library has done this step.
 5. Turn reach on for one computer and run the edge checks below.

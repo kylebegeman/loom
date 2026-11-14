@@ -35,7 +35,7 @@ vi.mock("../state/sourceControl", () => ({
 
 import { addProjectToMachine } from "./addProjectToMachine";
 
-const source = EnvironmentId.make("dorothy");
+const source = EnvironmentId.make("maple");
 const target = EnvironmentId.make("mini");
 
 describe("addProjectToMachine", () => {
@@ -65,7 +65,7 @@ describe("addProjectToMachine", () => {
           _tag: "Success",
           value: {
             projectId: ProjectId.make("existing"),
-            cwd: "/Users/kyle/Projects/corbelo",
+            cwd: "/Users/me/Projects/corbelo",
             remoteUrl: "https://github.com/kyle/corbelo",
             repository: null,
             reused: true,
@@ -76,7 +76,7 @@ describe("addProjectToMachine", () => {
     });
 
     const projectId = await addProjectToMachine({
-      source: { environmentId: source, cwd: "/Users/kyle/Code/corbelo" },
+      source: { environmentId: source, cwd: "/Users/me/Code/corbelo" },
       subdirectory: "",
       target: { environmentId: target, label: "Mini" },
       projectId: ProjectId.make("requested"),
@@ -90,7 +90,7 @@ describe("addProjectToMachine", () => {
     expect(await written).toEqual({
       environmentId: target,
       input: {
-        cwd: "/Users/kyle/Projects/corbelo",
+        cwd: "/Users/me/Projects/corbelo",
         relativePath: ".env.local",
         contents: ".env.local",
       },

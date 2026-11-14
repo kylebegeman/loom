@@ -72,21 +72,21 @@ reach on or off from the computer itself or from a device paired with full acces
 
 Everything ships off, so each default is reversible. D1 is settled; the others wait for Kyle.
 
-| ID  | Default                                                                                                                                    |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| D1  | Settled: a dedicated Pocket ID admin API key with a one-year expiry, in an optional file read on every call, not `STATIC_API_KEY`.         |
-| D2  | `LOOM_REACH_ZONE` is required and has no default. A dedicated zone, ideally in its own Cloudflare account, is recommended over `begam.in`. |
-| D3  | Passkey required is opt-in, on by default in Use these values, and independent of the session age cap (7 days there unless changed).       |
-| D4  | Each computer's resource is `<Library origin>/computers/<environment id>`, derived by the Library.                                         |
-| D5  | One zone-wide rate-limit rule: 60 requests per 10 seconds per client and data center on four sign-in paths.                                |
-| D6  | Webhooks (`/api/hooks/*`) stay blocked on reach addresses.                                                                                 |
-| D7  | Browser Identity sign-in stays off on reach addresses.                                                                                     |
-| D8  | Library credentials are 0600 files named by environment variables.                                                                         |
-| D9  | `relay:write` for the switch and Remove, `settings:write` for Retire. A UI gate only (F11 below).                                          |
-| D10 | Agents can read reach and turn it off or remove it, never turn it on.                                                                      |
-| D11 | The Library creates a computer's Pocket ID resource only during a reach setup.                                                             |
-| D12 | Off is local. Remove keeps the Pocket ID resource and grant. Retire with "Also end Loom sign-in" deletes the resource.                     |
-| D13 | Edge rules stay after the last computer goes. Hostnames are sticky within a zone and never reassigned automatically.                       |
+| ID  | Default                                                                                                                                       |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Settled: a dedicated Pocket ID admin API key with a one-year expiry, in an optional file read on every call, not `STATIC_API_KEY`.            |
+| D2  | `LOOM_REACH_ZONE` is required and has no default. A dedicated zone, ideally in its own Cloudflare account, is recommended over `example.com`. |
+| D3  | Passkey required is opt-in, on by default in Use these values, and independent of the session age cap (7 days there unless changed).          |
+| D4  | Each computer's resource is `<Library origin>/computers/<environment id>`, derived by the Library.                                            |
+| D5  | One zone-wide rate-limit rule: 60 requests per 10 seconds per client and data center on four sign-in paths.                                   |
+| D6  | Webhooks (`/api/hooks/*`) stay blocked on reach addresses.                                                                                    |
+| D7  | Browser Identity sign-in stays off on reach addresses.                                                                                        |
+| D8  | Library credentials are 0600 files named by environment variables.                                                                            |
+| D9  | `relay:write` for the switch and Remove, `settings:write` for Retire. A UI gate only (F11 below).                                             |
+| D10 | Agents can read reach and turn it off or remove it, never turn it on.                                                                         |
+| D11 | The Library creates a computer's Pocket ID resource only during a reach setup.                                                                |
+| D12 | Off is local. Remove keeps the Pocket ID resource and grant. Retire with "Also end Loom sign-in" deletes the resource.                        |
+| D13 | Edge rules stay after the last computer goes. Hostnames are sticky within a zone and never reassigned automatically.                          |
 
 Follow-up decisions for Kyle: checking the native client's callback URLs for drift (F3), an MCP
 tool that turns reach on, and Cloudflare Access as a second step in front of the address.

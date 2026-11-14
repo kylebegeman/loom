@@ -15,7 +15,7 @@ import type {
 import { describe, expect, it } from "vite-plus/test";
 import { libraryStartDefaults } from "./libraryStartDefaults";
 
-const dorothy = EnvironmentId.make("dorothy");
+const maple = EnvironmentId.make("maple");
 const mini = EnvironmentId.make("mini");
 const instanceId = ProviderInstanceId.make("codex");
 const config = {
@@ -54,7 +54,7 @@ const project: LibraryProject = {
   createdAt: "2026-10-21T00:00:00Z",
   updatedAt: "2026-10-21T00:00:00Z",
 };
-const copy = (id: string, environmentId = dorothy): LibraryWorkingCopy => ({
+const copy = (id: string, environmentId = maple): LibraryWorkingCopy => ({
   id,
   projectId: project.id,
   projectRevision: 1,
@@ -78,19 +78,19 @@ const input = (overrides: Partial<Parameters<typeof libraryStartDefaults>[0]> = 
   project,
   copies: [copy("files")],
   threads: [],
-  hosts: [dorothy, mini].map((environmentId) => ({
+  hosts: [maple, mini].map((environmentId) => ({
     environmentId,
-    label: environmentId === dorothy ? "Dorothy" : "Mini",
+    label: environmentId === maple ? "Maple" : "Mini",
     online: true,
     supportsExecution: true,
     capabilities: undefined,
   })),
   remembered: [],
-  operable: new Set([dorothy, mini]),
-  terminal: new Set([dorothy, mini]),
+  operable: new Set([maple, mini]),
+  terminal: new Set([maple, mini]),
   libraryOperable: true,
   configs: new Map([
-    [dorothy, config],
+    [maple, config],
     [mini, config],
   ]),
   localProject: () => null,
@@ -130,15 +130,15 @@ const usedOn = (environmentId: EnvironmentId): LibraryThreadSummary => ({
 describe("New task Library project defaults", () => {
   it("names the computer, model and permissions a tap starts with, on the files already there", () => {
     expect(libraryStartDefaults(input())).toEqual({
-      environmentId: dorothy,
+      environmentId: maple,
       copyId: "files",
-      summary: "Dorothy · GPT 6.0 Astra · Full access",
+      summary: "Maple · GPT 6.0 Astra · Full access",
     });
   });
 
   it("promises the computer and files web promises for the same project", () => {
     const value = input({
-      copies: [copy("dorothy-files"), copy("mini-files", mini)],
+      copies: [copy("maple-files"), copy("mini-files", mini)],
       threads: [usedOn(mini)],
     });
     expect(webPromise(value)?.copy.id).toBe("mini-files");
@@ -168,7 +168,7 @@ describe("New task Library project defaults", () => {
     expect(webPromise(value)?.copy.id).toBe("folder");
     expect(libraryStartDefaults(value)).toBeNull();
     const elsewhere = input({ copies: [copy("files"), copy("mini-files", mini)] });
-    expect(webPromise(elsewhere)?.environmentId).toBe(dorothy);
+    expect(webPromise(elsewhere)?.environmentId).toBe(maple);
     expect(libraryStartDefaults({ ...elsewhere, operable: new Set([mini]) })).toBeNull();
   });
 
@@ -197,7 +197,7 @@ describe("New task Library project defaults", () => {
       },
     }));
     const working = {
-      environmentId: dorothy,
+      environmentId: maple,
       worktreePath: "/Projects/files/app",
       archivedAt: null,
       runtime: {
@@ -210,14 +210,14 @@ describe("New task Library project defaults", () => {
       },
     };
     expect(libraryStartDefaults(input({ hosts: worktrees, shells: [working] }))?.summary).toBe(
-      "Dorothy · GPT 6.0 Astra · Full access · New worktree",
+      "Maple · GPT 6.0 Astra · Full access · New worktree",
     );
     expect(libraryStartDefaults(input({ hosts: worktrees }))?.summary).toBe(
-      "Dorothy · GPT 6.0 Astra · Full access",
+      "Maple · GPT 6.0 Astra · Full access",
     );
     // A computer that cannot start one keeps the shared folder, and the row says nothing more.
     expect(libraryStartDefaults(input({ shells: [working] }))?.summary).toBe(
-      "Dorothy · GPT 6.0 Astra · Full access",
+      "Maple · GPT 6.0 Astra · Full access",
     );
   });
 
@@ -243,7 +243,7 @@ describe("New task Library project defaults", () => {
     }));
     const offline = input({ hosts, offline: true, libraryOperable: false });
     expect(libraryStartDefaults(offline)).toMatchObject({
-      environmentId: dorothy,
+      environmentId: maple,
       copyId: "files",
     });
     expect(

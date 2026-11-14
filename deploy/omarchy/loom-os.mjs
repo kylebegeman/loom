@@ -3569,11 +3569,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     // oxlint-disable-next-line t3code/no-global-process-runtime -- Portable standalone CLI has no Effect runtime dependency.
     if (process.platform !== "linux" && !options["dry-run"])
       throw new Error("Install LoomOS on Linux; use --dry-run to prepare elsewhere.");
-    const config = (await readJson(p.configFile)) ?? {
-      version: 1,
-      profile: "laptop",
-      officeUrl: "https://office.begam.in",
-    };
+    const config = (await readJson(p.configFile)) ?? { version: 1, profile: "laptop" };
     const mapping = {
       profile: "profile",
       "loom-executable": "loomExecutable",
@@ -3600,6 +3596,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         throw new Error("--server-port must be an integer from 1 to 65535.");
       config[mapping[key]] = key === "server-port" ? Number(value) : value;
     }
+    if (config.officeUrl === undefined)
+      throw new Error("Pass --office-url with your Office server's origin.");
     print(await install(config, { env, dryRun: !!options["dry-run"] }));
     return;
   }

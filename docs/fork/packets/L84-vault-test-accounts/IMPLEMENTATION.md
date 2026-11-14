@@ -33,7 +33,7 @@ backend restart. TESTING records focused checks and integrated web evidence.
    Manual mark-clean remains an operator attestation until then.
 3. The read-only Migadu transport contract now passes synthetic message and real loopback
    IMAP/TLS proof. It has no default live connector, credential ingress or product integration.
-   Kyle confirmed the dedicated `vault@begam.in` mailbox, but the reader identity, live routing/
+   Kyle confirmed the dedicated `vault@example.com` mailbox, but the reader identity, live routing/
    authentication/flag acceptance and approved custody/audit path remain pending behind L79.
    The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) keeps
    live secrets Kyle-only in 1Password, outside disposable OpenBao and this lane's test state.

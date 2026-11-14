@@ -5,7 +5,7 @@ Sources for this packet. Treat external repositories as references, not code to 
 ## Old Loom
 
 The matching items in [selections.md](../../selections.md) (P/F ids) and where to find the
-old implementation in `bagelvault/loom` 0.13.10, with what to keep and what to leave behind.
+old implementation in the old private Loom repository 0.13.10, with what to keep and what to leave behind.
 
 ## Upstream T3 Code
 

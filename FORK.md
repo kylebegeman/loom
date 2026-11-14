@@ -39,7 +39,7 @@ Fork-owned files, never edited upstream:
 ## Product text
 
 Text a person or an agent reads says Loom, or drops the product name where it adds nothing
-("orangepi5pro did not answer"). Each reworded line in an upstream file carries `fork: brand`,
+("worker-01 did not answer"). Each reworded line in an upstream file carries `fork: brand`,
 and the files are rows in `docs/fork/seams.tsv`. Comments, span names and identifiers keep
 T3 names. Copy that exists only for T3 Connect is left for the
 [Loom-owned connections](docs/fork/packets/LOOM-CONNECTIONS.md) work, which turns Connect off in
@@ -471,12 +471,12 @@ after a reset credit is redeemed. Off, launches, status, usage and the picker ar
 upstream's.
 
 The LoomOS integration pack for Omarchy workstations lives outside the app in
-`deploy/omarchy`, with its implementation packets in `deploy/omarchy/packets` and
-[user help](docs/fork/user/loom-os.md). `scripts/fork/loom.sh check` runs its tests.
+`deploy/omarchy`, with [user help](docs/fork/user/loom-os.md); its implementation packets
+and rollout evidence live in the maintainer's private platform repository.
+`scripts/fork/loom.sh check` runs its tests.
 
-The `respectful-notifications` seams come from LoomOS packet 07
-(`deploy/omarchy/packets/07-respectful-actionable-notifications.md`) and
-`apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
+The `respectful-notifications` seams come from LoomOS packet 07 (respectful, actionable
+notifications) and `apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
 setting, on by default, chooses between the thread or pull request title and a generic body
 in system notifications, for thread alerts and review guide alerts
 (`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch sits under Thread
@@ -1314,30 +1314,39 @@ runners the fork does not have. Only `loom-*.yml` workflows run. The
 first step of every `Loom upstream` run disables any other active workflow, including ones
 a merge adds, and the default workflow token is read-only.
 
-Claude in `Loom upstream` and `Loom Claude` runs on Kyle's pooled Claude accounts through
-Switchboard on Dorothy, so one account's weekly limit does not stop a run. Each job joins
-the tailnet as an ephemeral `tag:servers` node, which can reach only Dorothy's gateway
-port, and `Loom upstream` checks the gateway with one token count before any session
-starts. The workflows need these repository secrets:
+Claude in `Loom upstream` and `Loom Claude` runs on the owner's pooled Claude accounts
+through a Switchboard gateway, so one account's weekly limit does not stop a run. Each job
+joins the tailnet as an ephemeral `tag:servers` node, which can reach only the gateway's port,
+and `Loom upstream` checks the gateway with one token count before any session starts. The
+owner's own values and setup commands live in the private platform repository. The workflows
+need this repository variable:
 
-- `SWITCHBOARD_CI_KEY`: Switchboard's gateway-only CI key, Keychain `switchboard/ci-api-key`
-  on Dorothy. It reaches only Claude Messages routes for Opus, Sonnet and Haiku 5.5. Set it
-  without echoing it:
-  `/usr/bin/security find-generic-password -s switchboard -a ci-api-key -w | gh secret set SWITCHBOARD_CI_KEY -R kylebegeman/loom`.
+- `LOOM_SWITCHBOARD_URL`: the gateway's private tailnet origin, such as
+  `http://machine.tailnet.ts.net:8317`. Both workflows stop before Claude starts while it is
+  empty, so the gateway key never goes to `api.anthropic.com`.
+
+and these repository secrets:
+
+- `SWITCHBOARD_CI_KEY`: Switchboard's gateway-only CI key. It reaches only Claude Messages
+  routes for Opus, Sonnet and Haiku 5.5. Pipe it into `gh secret set SWITCHBOARD_CI_KEY`
+  from where it is stored, without echoing it.
 - `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`: the Tailscale workload identity federation
-  credential (GitHub OIDC, Auth Keys write, `tag:servers`). Its subject is
-  `repo:kylebegeman@1012880/loom@1384372776:*` because the repository issues GitHub's
-  immutable OIDC subjects, which carry the owner and repository IDs. A
-  `repo:kylebegeman/loom:*` subject never matches, and the tailnet join fails with a 403.
+  credential (GitHub OIDC, Auth Keys write, `tag:servers`). When the repository issues
+  GitHub's immutable OIDC subjects (`gh api repos/<owner>/<repo>/actions/oidc/customization/sub`),
+  its subject is `repo:<owner>@<owner-id>/<repo>@<repo-id>:*`, carrying the owner and
+  repository IDs. A `repo:<owner>/<repo>:*` subject then never matches, and the tailnet join
+  fails with a 403.
 - `LOOM_ALERT_WEBHOOK_URL`: the webhook URL of the `Loom upstream alert` scheduled task in
   the loom project. Rotating the task's webhook token means setting this again.
-- `LOOM_BOT_TOKEN`: a fine-grained personal access token for `kylebegeman/loom` only, with
+- `LOOM_BOT_TOKEN`: a fine-grained personal access token for this repository only, with
   read and write access to Contents, Pull requests and Workflows. The built-in token cannot
   push the upstream workflow changes most merges carry. It expires; renew it when runs fail
   to push.
+- `LOOM_PERSONAL_DENYLIST`: the private deny list for the
+  [personal identifier check](docs/fork/operations/personal-identifiers.md).
 
-When the Claude pool is exhausted, run the same integration and review locally on
-Dorothy with `LOOM_AGENT_PROVIDER=codex LOOM_RESOLVE_JOBS=1` exported. Codex uses
+When the Claude pool is exhausted, run the same integration and review locally on the
+gateway's host with `LOOM_AGENT_PROVIDER=codex LOOM_RESOLVE_JOBS=1` exported. Codex uses
 `switchboard run codex` and the existing local credential broker, with
 `LOOM_CODEX_MODEL` defaulting to `gpt-6.1-sol`. Resolution and repair sessions use the
 workspace-write sandbox; independent reviews use read-only. Start from `origin/main`

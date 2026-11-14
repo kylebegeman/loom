@@ -236,7 +236,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
           ? {
               computer: {
                 environmentId: source,
-                label: "Dorothy",
+                label: "Maple",
                 platform: { os: "darwin", arch: "arm64" },
                 appVersion: "0.0.58",
                 supportsExecution: true,
@@ -316,7 +316,7 @@ const configured = {
 };
 const page: PreviewPage = {
   id: "page-1",
-  url: "https://pages.bagels.top/p/page-1",
+  url: "https://pages.example.net/p/page-1",
   title: "Release plan",
   kind: "html",
   projectId: ProjectId.make("project"),
@@ -623,12 +623,12 @@ describe("authenticated Library publishing", () => {
       run(configured, (f) =>
         Effect.gen(function* () {
           expect(
-            yield* f.publisher.registerPreviews({ machine: "dorothy", suffix: "bagels.top" }),
+            yield* f.publisher.registerPreviews({ machine: "maple", suffix: "example.net" }),
           ).toEqual(previewAccess);
           yield* f.publisher.registerPreviews(null);
           // It names itself, so a token shared by several computers can register too.
           expect(yield* Ref.get(f.previewBodies)).toEqual([
-            { environmentId: source, previews: { machine: "dorothy", suffix: "bagels.top" } },
+            { environmentId: source, previews: { machine: "maple", suffix: "example.net" } },
             { environmentId: source, previews: null },
           ]);
           yield* Ref.set(f.previewsSupported, false);
@@ -641,7 +641,7 @@ describe("authenticated Library publishing", () => {
   it.effect("registers its own preview hosts in-process when it is the Library", () =>
     run({ LOOM_LIBRARY_AUTHORITY: "true" }, (f) =>
       Effect.gen(function* () {
-        const previews = { machine: "dorothy", suffix: "bagels.top" };
+        const previews = { machine: "maple", suffix: "example.net" };
         expect(yield* f.publisher.registerPreviews(previews)).toEqual(previewAccess);
         expect(yield* Ref.get(f.localRegistrations)).toEqual([
           { environmentId: source, sessionId: null, previews },

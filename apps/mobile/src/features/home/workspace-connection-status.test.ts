@@ -102,12 +102,12 @@ describe("compact workspace connection status", () => {
     const state = workspaceState({
       hasReadyEnvironment: false,
       hasConnectingEnvironment: true,
-      connectingEnvironments: [connectingComputer("Dorothy")],
+      connectingEnvironments: [connectingComputer("Maple")],
     });
 
     expect(workspaceConnectionStatusPresentation(state, { compact: true })).toEqual({
       label: "Connecting",
-      accessibilityLabel: "Reconnecting to Dorothy",
+      accessibilityLabel: "Reconnecting to Maple",
       showsProgress: true,
     });
   });
@@ -115,7 +115,7 @@ describe("compact workspace connection status", () => {
   it("keeps the brand during partial reconnects and reports only a connected computer's sync", () => {
     const state = workspaceState({
       hasConnectingEnvironment: true,
-      connectingEnvironments: [connectingComputer("Dorothy")],
+      connectingEnvironments: [connectingComputer("Maple")],
     });
 
     expect(workspaceConnectionStatusPresentation(state, { compact: true })).toBeNull();
@@ -125,7 +125,7 @@ describe("compact workspace connection status", () => {
           ...state,
           hasSyncingConnectedEnvironment: true,
           hasPendingShellSnapshot: true,
-          connectionError: "Could not reach Dorothy",
+          connectionError: "Could not reach Maple",
         },
         { compact: true },
       ),
@@ -141,9 +141,9 @@ describe("compact workspace connection status", () => {
       hasReadyEnvironment: false,
       hasConnectingEnvironment: true,
       connectingEnvironments: [
-        connectingComputer("Dorothy"),
-        connectingComputer("Dorothy 2"),
-        connectingComputer("Dorothy 3"),
+        connectingComputer("Maple"),
+        connectingComputer("Maple 2"),
+        connectingComputer("Maple 3"),
       ],
     });
 
@@ -154,12 +154,12 @@ describe("compact workspace connection status", () => {
     });
     expect(
       workspaceConnectionStatusPresentation(
-        { ...state, connectionError: "Dorothy 3 needs to be paired again." },
+        { ...state, connectionError: "Maple 3 needs to be paired again." },
         { compact: true },
       ),
     ).toEqual({
       label: "Connection issue",
-      accessibilityLabel: "Dorothy 3 needs to be paired again.",
+      accessibilityLabel: "Maple 3 needs to be paired again.",
       showsProgress: false,
     });
   });
@@ -169,7 +169,7 @@ describe("compact workspace connection status", () => {
       networkStatus: "offline",
       hasReadyEnvironment: false,
       hasConnectingEnvironment: true,
-      connectingEnvironments: [connectingComputer("Dorothy")],
+      connectingEnvironments: [connectingComputer("Maple")],
     });
 
     expect(workspaceConnectionStatusPresentation(state, { compact: true })).toEqual({

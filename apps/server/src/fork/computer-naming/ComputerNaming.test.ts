@@ -15,7 +15,7 @@ import * as ComputerNaming from "./ComputerNaming.ts";
 
 const namedHost = Layer.mergeAll(
   Layer.succeed(HostProcess.Platform, "win32"),
-  Layer.succeed(HostProcess.Hostname, "Dorothy"),
+  Layer.succeed(HostProcess.Hostname, "Maple"),
 );
 const namingLayer = (baseDir: string) =>
   ComputerNaming.layer.pipe(
@@ -39,26 +39,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("canonical comput
         const naming = yield* ComputerNaming.ComputerNaming;
         expect(yield* naming.current).toEqual({
           name: null,
-          label: "Dorothy",
-          defaultLabel: "Dorothy",
+          label: "Maple",
+          defaultLabel: "Maple",
         });
         expect(yield* naming.rename({ name: "  Rack Mac  " })).toEqual({
           name: "Rack Mac",
           label: "Rack Mac",
-          defaultLabel: "Dorothy",
+          defaultLabel: "Maple",
         });
       }).pipe(Effect.provide(namingLayer(baseDir)));
       yield* Effect.gen(function* () {
         const naming = yield* ComputerNaming.ComputerNaming;
         expect((yield* naming.current).label).toBe("Rack Mac");
-        expect((yield* naming.rename({ name: null })).label).toBe("Dorothy");
+        expect((yield* naming.rename({ name: null })).label).toBe("Maple");
       }).pipe(Effect.provide(namingLayer(baseDir)));
       const restored = yield* ComputerNaming.ComputerNaming.pipe(
         Effect.flatMap((naming) => naming.current),
         Effect.provide(namingLayer(baseDir)),
       );
       expect(restored.name).toBeNull();
-      expect(restored.label).toBe("Dorothy");
+      expect(restored.label).toBe("Maple");
     }),
   );
 
@@ -131,11 +131,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("canonical comput
         yield* Effect.all([naming.rename({ name: "Rack A" }), naming.rename({ name: "Rack B" })], {
           concurrency: "unbounded",
         });
-        expect((yield* Deferred.await(changes)).toSorted()).toEqual([
-          "Dorothy",
-          "Rack A",
-          "Rack B",
-        ]);
+        expect((yield* Deferred.await(changes)).toSorted()).toEqual(["Maple", "Rack A", "Rack B"]);
         return yield* naming.current;
       }).pipe(Effect.provide(namingLayer(baseDir)));
       const persisted = yield* ComputerNaming.ComputerNaming.pipe(
@@ -160,7 +156,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("canonical comput
         expect(renamed.environmentId).toBe(original.environmentId);
         expect(renamed.label).toBe("Orange Pi");
         yield* naming.rename({ name: null });
-        expect((yield* environment.getDescriptor).label).toBe("Dorothy");
+        expect((yield* environment.getDescriptor).label).toBe("Maple");
       }).pipe(Effect.provide(environmentLayer(baseDir)));
     }),
   );
@@ -177,7 +173,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("canonical comput
         Effect.flatMap((naming) => naming.current),
         Effect.provide(namingLayer(baseDir)),
       );
-      expect(current.label).toBe("Dorothy");
+      expect(current.label).toBe("Maple");
       expect(yield* fs.readFileString(`${directory}/settings.json`)).toBe(contents);
     }),
   );

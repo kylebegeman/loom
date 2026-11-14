@@ -57,5 +57,5 @@ unchanged.
 
 ## Manual
 
-On request only, after Kyle approves a rollout: one remote run from Dorothy to a Mini running a
+On request only, after Kyle approves a rollout: one remote run from Maple to a Mini running a
 Loom server, through the real Library.

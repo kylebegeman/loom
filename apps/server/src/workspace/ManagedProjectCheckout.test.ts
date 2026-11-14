@@ -559,7 +559,7 @@ describe("Managed primary project checkouts", () => {
 
   it.effect("looks past Linux login helpers whose working folders the kernel hides", () =>
     Effect.gen(function* () {
-      const root = "/home/kyle/Projects/app";
+      const root = "/home/me/Projects/app";
       type Process = {
         readonly uid: number;
         readonly cwd?: string;
@@ -570,7 +570,7 @@ describe("Managed primary project checkouts", () => {
         "1116": { uid: 1001, permitted: "0000000800000000" },
         "1167": { uid: 1001, statusUid: 0 },
         "2000": { uid: 1002 },
-        "3000": { uid: 1001, cwd: "/home/kyle" },
+        "3000": { uid: 1001, cwd: "/home/me" },
       };
       const reason = (processes: Record<string, Process>, ownEffective = "0000000000000000") => {
         const at = (target: string) => processes[target.split("/")[2] ?? ""];

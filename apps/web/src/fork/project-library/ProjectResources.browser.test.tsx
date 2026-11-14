@@ -6,7 +6,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
 import { ProjectResources } from "./ProjectResources";
 
-const dorothy = EnvironmentId.make("dorothy");
+const maple = EnvironmentId.make("maple");
 const corbelo: LibraryResource = {
   id: "corbelo",
   kind: "repository",
@@ -20,7 +20,7 @@ const held: LibraryWorkingCopy = {
   id: "copy",
   projectId: "project",
   projectRevision: 1,
-  environmentId: dorothy,
+  environmentId: maple,
   rootPath: "/work/corbelo",
   repositories: [
     {
@@ -43,7 +43,7 @@ it("asks again before a second repository moves the root repository a computer h
     <ProjectResources
       resources={[corbelo]}
       copies={[held]}
-      hostLabel={() => "Dorothy"}
+      hostLabel={() => "Maple"}
       canEdit
       busy={false}
       adding
@@ -61,7 +61,7 @@ it("asks again before a second repository moves the root repository a computer h
   await expect
     .element(
       page.getByText(
-        "This moves corbelo into corbelo/. The copy on Dorothy keeps it at its folder root, so Loom prepares a new copy for work on this project there.",
+        "This moves corbelo into corbelo/. The copy on Maple keeps it at its folder root, so Loom prepares a new copy for work on this project there.",
       ),
     )
     .toBeVisible();
@@ -80,7 +80,7 @@ it("saves an intentional branch override and clears it back to the repository de
       <ProjectResources
         resources={resources}
         copies={[]}
-        hostLabel={() => "Dorothy"}
+        hostLabel={() => "Maple"}
         canEdit
         busy={false}
         adding={false}

@@ -35,7 +35,7 @@ Native iOS acceptance **passed**, run by Kyle on iOS 26.5 simulator `DF1675B4`
 `0.0.99-nightly.20261019.3348` (TestFlight `357.75.33`). The backend and synthetic loopback OpenBao
 were isolated from this lane's `15684`/`7645` fixture. The Threads screen rendered without the
 previous "Maximum update depth exceeded" overlay, resolving that blocker. Evidence below is
-Kyle's Device QA captures in [Loom Projects Updates](t3-thread://v1/3f336eb2-b30f-401c-ad42-241fa4b12bb5).
+Kyle's Device QA captures in the Loom Projects Updates thread.
 
 | Native acceptance                                                                            | Evidence / read-back                               |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
@@ -294,7 +294,7 @@ acceptance, not evidence that the normal request path accepts that duration.
 | `c4` missing thread/project: fallback “Thread qa:missing-thread · Project qa:missing-project”, record name retained; “Some request context is unavailable. Refresh before approving.” Approval disabled | `dqe_bb6cd31a-53ad-44f9-a7c5-2cfbfb4420d7` |
 | Show all: decided cancelled/denied/revoked headers, no context warning or action buttons                                                                                                                | `dqe_8d324ba8-0bd6-43d9-9946-0f4219c170f3` |
 
-These are Device QA captures in [Loom Projects Updates](t3-thread://v1/3f336eb2-b30f-401c-ad42-241fa4b12bb5), stored as `<evidence-id>.png` under `/Users/kyle/.t3/userdata/fork/device-qa/evidence/3f336eb2-b30f-401c-ad42-241fa4b12bb5/`. `c3` was originally intended as unavailable but reused the existing `fixture:thread:2`/`fixture:project` records; it correctly resolved current with approval enabled. `c4` supplies the actual missing-reference case.
+These are Device QA captures in the Loom Projects Updates thread, stored as `<evidence-id>.png` under that thread's folder in `~/.t3/userdata/fork/device-qa/evidence/`. `c3` was originally intended as unavailable but reused the existing `fixture:thread:2`/`fixture:project` records; it correctly resolved current with approval enabled. `c4` supplies the actual missing-reference case.
 The count line changed from “3 pending of 9” to “4 of 10” after Refresh, then “0 of 10” after
 UI decisions. Kyle cancelled `c1`/`c4` and denied `c2`/`c3`. OpenBao read-back showed request
 revision 2, `grantId: null` and no new grant for every fixture. `decidedBy: one-time-token` is the

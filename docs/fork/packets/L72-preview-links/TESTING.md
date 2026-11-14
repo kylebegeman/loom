@@ -126,7 +126,7 @@ so it covers all of the above in one pass.
 
 ## Slice 1 live checks
 
-Port links were checked on 2026-10-19 through a real tunnel on `bagels.top`, against a
+Port links were checked on 2026-10-19 through a real tunnel on `example.net`, against a
 worktree `.t3` and never the live install, with `cloudflared` 2026.9.1 from `PATH`:
 
 - Setup reaches ready with one `cloudflared` as a child of the server, and again after a
@@ -171,7 +171,7 @@ A local run of the pages host checked:
 ## Still to check
 
 - A real-client pass for Library sign-in, pages, replies, and folder and container links.
-- Pages at `pages.bagels.top` from another device, including a private window that signs in
+- Pages at `pages.example.net` from another device, including a private window that signs in
   to the Library, and a reply sent while the computer is off.
 - DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
   hour with its hot reload socket open, and removing that device signs it out.

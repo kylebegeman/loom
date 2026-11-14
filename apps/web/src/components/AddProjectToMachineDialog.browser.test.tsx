@@ -126,7 +126,7 @@ describe("AddProjectToMachineDialog", () => {
     });
     machines.setup({
       environments: [
-        { environmentId, label: "Dorothy", serverConfig: null },
+        { environmentId, label: "Maple", serverConfig: null },
         {
           environmentId: "mini",
           label: "Mini",

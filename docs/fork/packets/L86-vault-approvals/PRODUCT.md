@@ -10,7 +10,7 @@ Persist a request bound to principal, item/action, destination, policy revision 
 
 ## User experience
 
-Approve a new development access request from mobile while Dorothy waits visibly. Inspect the requesting task and account. Cancel, deny or let the request expire; existing grants continue without new prompts.
+Approve a new development access request from mobile while Maple waits visibly. Inspect the requesting task and account. Cancel, deny or let the request expire; existing grants continue without new prompts.
 
 ## Why it improves the product
 

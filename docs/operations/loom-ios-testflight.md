@@ -178,9 +178,9 @@ hook with the private file `~/Library/Application Support/Loom Updates/ios.json`
   "appId": "1234567890",
   "profile": "loom-personal",
   "groups": ["Loom Internal"],
-  "exportOptions": "/Users/kyle/Library/Application Support/Loom Updates/ios-export-options.plist",
-  "signingKeychain": "/Users/kyle/Library/Keychains/loom-distribution.keychain-db",
-  "signingKeychainPasswordFile": "/Users/kyle/Library/Application Support/Loom Updates/apple-personal/signing-keychain-password"
+  "exportOptions": "/Users/me/Library/Application Support/Loom Updates/ios-export-options.plist",
+  "signingKeychain": "/Users/me/Library/Keychains/loom-distribution.keychain-db",
+  "signingKeychainPasswordFile": "/Users/me/Library/Application Support/Loom Updates/apple-personal/signing-keychain-password"
 }
 ```
 

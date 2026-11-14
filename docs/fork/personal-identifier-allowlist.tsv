@@ -1,0 +1,5 @@
+# Reviewed public values that look like personal identifiers, for scripts/fork/personal-identifiers.ts.
+# path-glob<TAB>text: a tailnet, home directory or UUID finding is allowed when its file matches the
+# glob and its line contains the text. Deny list entries are never allowlisted.
+scripts/fork/mobileIdentity.ts	const UPSTREAM_EXPO_PROJECT_ID = "d763fcb8-d37c-41ea-a773-b54a0ab4a454";
+docs/fork/packets/L46-model-print-check/REFERENCES.md	https://diglib.eg.org/items/60c72224-00f3-416d-9952-ee41e8c408da

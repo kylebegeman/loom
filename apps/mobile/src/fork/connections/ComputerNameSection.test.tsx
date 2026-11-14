@@ -8,13 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const harness = vi.hoisted(() => ({
   config: {
     environment: {
-      label: "Dorothy",
+      label: "Maple",
       capabilities: { repositoryIdentity: false, loomFeatures: ["computer-naming"] },
     },
   },
   allowed: true,
   query: {
-    data: { name: null as string | null, label: "Dorothy", defaultLabel: "Dorothy" },
+    data: { name: null as string | null, label: "Maple", defaultLabel: "Maple" },
     error: null as string | null,
     refresh: vi.fn(),
   },
@@ -111,14 +111,14 @@ function streamName(label: string) {
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  harness.config.environment.label = "Dorothy";
+  harness.config.environment.label = "Maple";
   harness.allowed = true;
-  harness.query.data = { name: null, label: "Dorothy", defaultLabel: "Dorothy" };
+  harness.query.data = { name: null, label: "Maple", defaultLabel: "Maple" };
   harness.query.error = null;
   harness.query.refresh.mockClear();
   harness.rename.mockReset();
   harness.rename.mockResolvedValue(
-    AsyncResult.success({ name: "My draft", label: "My draft", defaultLabel: "Dorothy" }),
+    AsyncResult.success({ name: "My draft", label: "My draft", defaultLabel: "Maple" }),
   );
   container = document.createElement("div");
   root = createRoot(container);
@@ -131,18 +131,18 @@ afterEach(() => {
 describe("live computer name editing", () => {
   it("shows another client's streamed rename immediately and refreshes reset metadata", () => {
     render();
-    expect(field().value).toBe("Dorothy");
+    expect(field().value).toBe("Maple");
     expect(button("Use computer's system name").disabled).toBe(true);
     streamName("Rack Mac");
     expect(field().value).toBe("Rack Mac");
     expect(harness.query.refresh).toHaveBeenCalledOnce();
-    harness.query.data = { name: "Rack Mac", label: "Rack Mac", defaultLabel: "Dorothy" };
+    harness.query.data = { name: "Rack Mac", label: "Rack Mac", defaultLabel: "Maple" };
     render();
     expect(button("Use computer's system name").disabled).toBe(false);
-    streamName("Dorothy");
-    expect(field().value).toBe("Dorothy");
+    streamName("Maple");
+    expect(field().value).toBe("Maple");
     expect(harness.query.refresh).toHaveBeenCalledTimes(2);
-    harness.query.data = { name: null, label: "Dorothy", defaultLabel: "Dorothy" };
+    harness.query.data = { name: null, label: "Maple", defaultLabel: "Maple" };
     render();
     expect(button("Use computer's system name").disabled).toBe(true);
   });

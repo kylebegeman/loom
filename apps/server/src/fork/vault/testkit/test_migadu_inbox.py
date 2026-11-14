@@ -18,7 +18,7 @@ import migadu_inbox as inbox
 NOW = datetime(2026, 10, 20, 20, 0, tzinfo=timezone.utc)
 RUN = "a1" * 16
 OTHER_RUN = "b2" * 16
-SENDER = "qa@begam.in"
+SENDER = "qa@example.org"
 REQUEST = inbox.Request(RUN, NOW - timedelta(minutes=1), SENDER)
 CREDENTIALS = inbox.Credentials(inbox.READER, "synthetic-reader-password")
 
@@ -186,7 +186,7 @@ class TestMigaduInbox(unittest.TestCase):
         self.assertNotIn(CREDENTIALS.password, repr(client.commands))
 
     def test_rewrite_mailbox_uses_inbox_fallback_but_still_filters_recipient(self):
-        client = FixtureClient({1: message(recipient="vault@begam.in"), 2: message()}, fallback=True)
+        client = FixtureClient({1: message(recipient="vault@example.org"), 2: message()}, fallback=True)
         result = self.read(client)
         self.assertEqual(result["folder"], "INBOX")
         self.assertEqual([entry["uid"] for entry in result["messages"]], [2])
@@ -195,7 +195,7 @@ class TestMigaduInbox(unittest.TestCase):
 
     def test_other_run_wrong_sender_base_mailbox_and_conflicting_aliases_never_fetch_body(self):
         other = REQUEST.recipient.replace(RUN, OTHER_RUN)
-        client = FixtureClient({1: message(recipient=other), 2: message(sender="other@begam.in"),
+        client = FixtureClient({1: message(recipient=other), 2: message(sender="other@example.org"),
                                 3: message(recipient=inbox.MAILBOX),
                                 4: message(recipient=REQUEST.recipient + ", " + other),
                                 5: message(recipient=REQUEST.recipient, extra={"X-Original-To": other})})
@@ -219,7 +219,7 @@ class TestMigaduInbox(unittest.TestCase):
                         inbox.Request(RUN, NOW - inbox.WINDOW, SENDER),
                         inbox.Request(RUN, NOW + timedelta(seconds=1), SENDER),
                         inbox.Request(RUN, NOW.replace(tzinfo=None), SENDER),
-                        inbox.Request(RUN, NOW, 'qa@begam.in\r\nHEADER')):
+                        inbox.Request(RUN, NOW, 'qa@example.org\r\nHEADER')):
             with self.subTest(request=request), patch.object(inbox, "BoundedImap") as connect:
                 with self.assertRaises(inbox.InboxError):
                     inbox.read_once(CREDENTIALS, request, connect=connect, clock=lambda: NOW)
@@ -288,7 +288,7 @@ class TestMigaduInbox(unittest.TestCase):
 
     def test_oversized_headers_are_skipped_without_withdrawing_another_message(self):
         for old in (True, False):
-            client = FixtureClient({1: message(sender="other@begam.in", extra={"Cc": "x" * inbox.MAX_HEADER_BYTES}), 2: message()}, fallback=True)
+            client = FixtureClient({1: message(sender="other@example.org", extra={"Cc": "x" * inbox.MAX_HEADER_BYTES}), 2: message()}, fallback=True)
             if old:
                 client.arrivals[1] = NOW - timedelta(days=2)
             with self.subTest(old=old):

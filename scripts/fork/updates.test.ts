@@ -1154,12 +1154,12 @@ describe("Loom update publishing", () => {
 
   it("keeps paths with spaces and XML characters as separate launchd arguments", () => {
     const plist = launchAgent(
-      "/Users/Kyle & Co/node",
-      "/Users/Kyle & Co/Loom Updates/updates.ts",
+      "/Users/Me & Co/node",
+      "/Users/Me & Co/Loom Updates/updates.ts",
       "/tmp/Loom <updates>.log",
     );
-    expect(plist).toContain("<string>/Users/Kyle &amp; Co/node</string>");
-    expect(plist).toContain("<string>/Users/Kyle &amp; Co/Loom Updates/updates.ts</string>");
+    expect(plist).toContain("<string>/Users/Me &amp; Co/node</string>");
+    expect(plist).toContain("<string>/Users/Me &amp; Co/Loom Updates/updates.ts</string>");
     expect(plist).toContain("<string>/tmp/Loom &lt;updates&gt;.log</string>");
   });
 });
@@ -1266,7 +1266,7 @@ describe("publisher Node", () => {
 describe("optional Loom iOS delivery", () => {
   const ownConfig = {
     enabled: true,
-    teamId: "23W93ZUURR",
+    teamId: "TEAMID1234",
     appId: "1234567890",
     profile: "loom-personal",
     groups: ["Personal testing"],
@@ -1390,7 +1390,7 @@ it("does not inherit interactive build or export overrides into automatic iOS de
 });
 
 it("skips iOS delivery only for a confirmed upload of the same source, team and app", () => {
-  const config = { teamId: "23W93ZUURR", appId: "1234567890" };
+  const config = { teamId: "TEAMID1234", appId: "1234567890" };
   const delivered = {
     sourceSha: COMMIT,
     ...config,
