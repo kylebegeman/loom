@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { findEnvironmentUpdate } from "./environment-maintenance";
+import { readEnvironmentReleaseIndex } from "../../fork/connections/releaseIndex"; // fork: private-releases
 
 export interface EnvironmentReleaseCheck {
   readonly fromVersion: string;
@@ -36,7 +37,11 @@ export const environmentReleaseCheckAtom = Atom.family((environmentId: Environme
     Effect.gen(function* () {
       const fromVersion = yield* Effect.tryPromise({ try: readServerVersion, catch: asError });
       const targetVersion = yield* Effect.tryPromise({
-        try: (signal) => findEnvironmentUpdate(fromVersion, signal),
+        // fork: private-releases
+        try: (signal) =>
+          findEnvironmentUpdate(fromVersion, signal, (signal) =>
+            readEnvironmentReleaseIndex(environmentId, signal),
+          ),
         catch: asError,
       }).pipe(
         Effect.timeoutOrElse({

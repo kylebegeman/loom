@@ -1,5 +1,6 @@
 export * from "./browser-dev-tools.ts";
 export * from "./machine-updates.ts";
+export * from "./release-index.ts";
 export * from "./workflows.ts";
 export * from "./skill-registry.ts";
 export * from "./project-library-decisions.ts";

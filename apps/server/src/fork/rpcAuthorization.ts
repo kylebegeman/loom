@@ -3,6 +3,7 @@ import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "@t3tools/contracts/fork";
 import { UPSTREAM_WS_METHODS as UPSTREAM } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_WS_METHODS as STORAGE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_WS_METHODS as UPDATES } from "@t3tools/contracts/fork";
+import { RELEASE_INDEX_WS_METHODS as RELEASES } from "@t3tools/contracts/fork";
 import { ATTENTION_STATUS_WS_METHODS as ATTENTION } from "@t3tools/contracts/fork";
 import { SKILL_REGISTRY_WS_METHODS as SK } from "@t3tools/contracts/fork";
 import { AuthFilesystemReadScope, AuthFilesystemWriteScope } from "@t3tools/contracts";
@@ -108,6 +109,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [UPSTREAM.dispatch]: AuthAccessWriteScope,
   [STORAGE.byCategory]: AuthOrchestrationReadScope,
   [UPDATES.status]: AuthOrchestrationReadScope,
+  [RELEASES.index]: AuthOrchestrationReadScope,
   [UPDATES.arm]: AuthEnvironmentMaintainScope,
   [UPDATES.cancel]: AuthEnvironmentMaintainScope,
   [ATTENTION.retry]: AuthOrchestrationOperateScope,

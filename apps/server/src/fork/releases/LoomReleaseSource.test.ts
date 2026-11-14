@@ -25,7 +25,10 @@ const SIGNED = "https://s3.example.test/bucket/releases/v1.2.3/SHA256SUMS?X-Amz-
 // LoomOS and Omarchy recipes name it explicitly; it follows the Library like no base at all.
 const GITHUB_RELEASES = "https://github.com/kylebegeman/loom/releases/download/";
 
-const fixture = (libraryResponse: (url: string) => Response) =>
+const fixture = (
+  libraryResponse: (url: string) => Response,
+  objectResponse: () => Response = () => new Response("object bytes"),
+) =>
   Effect.gen(function* () {
     const sent = yield* Ref.make<ReadonlyArray<{ url: string; redirect: unknown }>>([]);
     const direct = yield* Ref.make<ReadonlyArray<HttpClientRequest.HttpClientRequest>>([]);
@@ -41,7 +44,7 @@ const fixture = (libraryResponse: (url: string) => Response) =>
       });
     const directClient = HttpClient.make((request) =>
       Ref.update(direct, (all) => [...all, request]).pipe(
-        Effect.as(HttpClientResponse.fromWeb(request, new Response("object bytes"))),
+        Effect.as(HttpClientResponse.fromWeb(request, objectResponse())),
       ),
     );
     return { sent, direct, send, directClient };
@@ -57,6 +60,29 @@ const remote = (send: Send): LibraryConnection => ({
   endpoint: (path) => new URL(path, ORIGIN).toString(),
   send,
 });
+
+const resolveWith = (
+  connection: (send: Send) => LibraryConnection,
+  response: () => Response,
+  objectResponse?: () => Response,
+) =>
+  Effect.gen(function* () {
+    const f = yield* fixture(response, objectResponse);
+    const service = yield* LoomReleaseSource.pipe(
+      Effect.provide(
+        layer.pipe(
+          Layer.provide(
+            Layer.mock(LibraryConnectionService)({
+              current: Effect.succeed(connection(f.send)),
+              send: f.send,
+            }),
+          ),
+          Layer.provide(Layer.succeed(HttpClient.HttpClient, f.directClient)),
+        ),
+      ),
+    );
+    return { f, service };
+  });
 
 describe("library release client", () => {
   it.effect("follows the Library's redirect without this computer's credentials", () =>
@@ -101,24 +127,6 @@ describe("library release client", () => {
 });
 
 describe("loom release source", () => {
-  const resolveWith = (connection: (send: Send) => LibraryConnection, response: () => Response) =>
-    Effect.gen(function* () {
-      const f = yield* fixture(response);
-      const service = yield* LoomReleaseSource.pipe(
-        Effect.provide(
-          layer.pipe(
-            Layer.provide(
-              Layer.mock(LibraryConnectionService)({
-                current: Effect.succeed(connection(f.send)),
-                send: f.send,
-              }),
-            ),
-          ),
-        ),
-      );
-      return { f, service };
-    });
-
   it.effect("downloads from the Library when it hosts releases", () =>
     Effect.gen(function* () {
       for (const releaseBaseUrl of [undefined, GITHUB_RELEASES]) {
@@ -172,6 +180,60 @@ describe("loom release source", () => {
   );
 });
 
+describe("loom release index", () => {
+  const redirect = () => new Response(null, { status: 302, headers: { location: SIGNED } });
+
+  it.effect("reads the Library's mirrored releases through its signed redirect", () =>
+    Effect.gen(function* () {
+      const { f, service } = yield* resolveWith(remote, redirect, () =>
+        Response.json([
+          {
+            tag_name: "1.2.3",
+            draft: false,
+            prerelease: false,
+            body: "Notes",
+            assets: [{ name: "SHA256SUMS", size: 10 }],
+            html_url: "https://github.com/owner/repo/releases/tag/1.2.3",
+          },
+        ]),
+      );
+      expect(yield* service.index).toEqual([
+        {
+          tag_name: "1.2.3",
+          draft: false,
+          prerelease: false,
+          body: "Notes",
+          assets: [{ name: "SHA256SUMS" }],
+        },
+      ]);
+      expect((yield* Ref.get(f.direct)).map((request) => request.url)).toEqual([SIGNED]);
+    }),
+  );
+
+  it.effect("is null when the Library hosts no releases or none is enrolled", () =>
+    Effect.gen(function* () {
+      const notHosted = () => Response.json({ reason: "not-hosted" }, { status: 404 });
+      for (const connection of [remote, (): LibraryConnection => ({ kind: "none" })]) {
+        const { f, service } = yield* resolveWith(connection, notHosted);
+        expect(yield* service.index).toBeNull();
+        expect(yield* Ref.get(f.direct)).toEqual([]);
+      }
+    }),
+  );
+
+  it.effect("fails for an unreachable Library or an unreadable list instead of falling back", () =>
+    Effect.gen(function* () {
+      const unreachable = yield* resolveWith(remote, () => new Response("down", { status: 503 }));
+      expect((yield* Effect.flip(unreachable.service.index)).reason).toBe("unreachable");
+      expect(yield* Ref.get(unreachable.f.direct)).toEqual([]);
+      const unreadable = yield* resolveWith(remote, redirect, () =>
+        Response.json([{ tag_name: "1.2.3" }]),
+      );
+      expect((yield* Effect.flip(unreadable.service.index)).reason).toBe("invalid");
+    }),
+  );
+});
+
 describe("t3 update on an enrolled computer", () => {
   const INDEX = "https://s3.example.test/bucket/releases/index.json?X-Amz-Signature=abc";
   const forHome = (input: {
@@ -206,9 +268,9 @@ describe("t3 update on an enrolled computer", () => {
             request,
             request.url === INDEX
               ? Response.json([
-                  { tag_name: "0.0.210-nightly.20261114.4700", draft: true },
-                  { tag_name: "0.0.209-nightly.20261113.4650" },
-                  { tag_name: "0.0.208" },
+                  { tag_name: "0.0.210-nightly.20261114.4700", draft: true, assets: [] },
+                  { tag_name: "0.0.209-nightly.20261113.4650", draft: false, assets: [] },
+                  { tag_name: "0.0.208", draft: false, assets: [] },
                 ])
               : input.index(),
           );

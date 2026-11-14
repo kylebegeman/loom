@@ -31,6 +31,7 @@ import * as AttentionRetry from "./attention/AttentionRetry.ts";
 import * as ProjectStorageInventory from "./project-lifecycle/ProjectStorageInventory.ts";
 import * as StorageAccounting from "./project-lifecycle/StorageCleanupAccounting.ts";
 import * as UpdatePlans from "./machine-updates/UpdatePlans.ts";
+import * as LoomReleaseSource from "./releases/LoomReleaseSource.ts";
 import * as UpdateRuntime from "./machine-updates/UpdateRuntime.ts";
 import * as UpdatePlanStore from "./machine-updates/UpdatePlanStore.ts";
 import * as UpdateHandoff from "./machine-updates/UpdateHandoff.ts";
@@ -619,6 +620,10 @@ const ForkServicesLive = Layer.mergeAll(
     ),
     Layer.provide(UpdatePlanStore.layer),
     Layer.provide(UpdateRuntime.layer),
+  ),
+  LoomReleaseSource.layer.pipe(
+    Layer.provide(LibraryConnection.layer),
+    Layer.provide(FetchHttpClient.layer),
   ),
   AttentionRetry.layer.pipe(Layer.provide(RuntimeLayer.layerThreadManagementProvided)),
   SkillRegistry.layer.pipe(

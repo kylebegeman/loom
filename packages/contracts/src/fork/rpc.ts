@@ -4,6 +4,7 @@ import { DevEnvironmentRpcGroup, DEV_ENVIRONMENT_WS_METHODS } from "./browser-de
 import { UpstreamSupervisorRpcGroup } from "./upstream-supervisor.ts";
 import { ProjectStorageRpcGroup } from "./project-storage.ts";
 import { UpdatePlanRpcGroup } from "./machine-updates.ts";
+import { ReleaseIndexRpcGroup } from "./release-index.ts";
 import { AttentionStatusRpcGroup } from "./attention-status.ts";
 import { SkillRegistryRpcGroup, SKILL_REGISTRY_WS_METHODS } from "./skill-registry.ts";
 import { ProjectWorkflowsRpcGroup, PROJECT_WORKFLOW_WS_METHODS } from "./project-workflows.ts";
@@ -94,6 +95,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   DevApiLibraryRpcGroup,
   ProjectStorageRpcGroup,
   UpdatePlanRpcGroup,
+  ReleaseIndexRpcGroup,
   UpstreamSupervisorRpcGroup,
   AttentionStatusRpcGroup,
   SkillRegistryRpcGroup,

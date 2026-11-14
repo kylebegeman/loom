@@ -1,5 +1,9 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryError } from "@t3tools/contracts/fork";
+import {
+  type LibraryError,
+  MirroredReleaseIndex,
+  ReleaseIndexError,
+} from "@t3tools/contracts/fork";
 import { newestCliReleaseVersion, type CliReleaseChannel } from "@t3tools/shared/cliRelease";
 import { isLoomGitHubReleaseBaseUrl } from "@t3tools/shared/fork/cli-release";
 import {
@@ -7,6 +11,7 @@ import {
   LOOM_RELEASES_NOT_HOSTED,
   LOOM_RELEASES_ROUTE,
 } from "@t3tools/shared/fork/release-mirror";
+import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -18,6 +23,7 @@ import {
   HttpClientError,
   HttpClientRequest,
   HttpClientResponse,
+  HttpIncomingMessage,
 } from "effect/http";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -41,6 +47,11 @@ export class LoomReleaseSource extends Context.Service<
      * Library says it hosts no releases; then `configured` is returned unchanged.
      */
     readonly resolve: (configured: ReleaseSource) => Effect.Effect<ReleaseSource>;
+    /**
+     * The Library's mirrored release list, or `null` when it hosts none or this computer is
+     * enrolled in no Library. A broken Library fails rather than reading as the public feed.
+     */
+    readonly index: Effect.Effect<MirroredReleaseIndex | null, ReleaseIndexError>;
   }
 >()("t3/fork/releases/LoomReleaseSource") {}
 
@@ -131,25 +142,61 @@ const releaseSourceFor = Effect.fn("LoomReleaseSource.releaseSourceFor")(functio
   };
 });
 
+export interface LibraryReleases {
+  readonly releaseBaseUrl: string;
+  readonly httpClient: HttpClient.HttpClient;
+}
+
+const INDEX_TIMEOUT = "15 seconds";
+const INDEX_MAX_BYTES = ByteSize.mebibytes(8);
+const decodeIndex = Schema.decodeUnknownEffect(MirroredReleaseIndex);
+
+/** The mirror's `index.json`, read through the Library's signed redirect. */
+const readLibraryIndex = Effect.fn("LoomReleaseSource.readLibraryIndex")(
+  function* (releases: LibraryReleases) {
+    const response = yield* releases.httpClient
+      .get(`${releases.releaseBaseUrl}/${LOOM_RELEASE_INDEX_FILE}`)
+      .pipe(
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.mapError(() => new ReleaseIndexError({ reason: "unreachable" })),
+      );
+    return yield* response.json.pipe(
+      Effect.provideService(HttpIncomingMessage.MaxBodySize, INDEX_MAX_BYTES),
+      Effect.flatMap(decodeIndex),
+      Effect.mapError(() => new ReleaseIndexError({ reason: "invalid" })),
+    );
+  },
+  Effect.timeoutOrElse({
+    duration: INDEX_TIMEOUT,
+    orElse: () => Effect.fail(new ReleaseIndexError({ reason: "unreachable" })),
+  }),
+);
+
 const make = Effect.gen(function* () {
   const connections = yield* LibraryConnectionService;
-  return LoomReleaseSource.of({
-    resolve: Effect.fn("LoomReleaseSource.resolve")(function* (configured) {
-      if (!followsLibraryReleases(configured.releaseBaseUrl)) return configured;
-      return yield* releaseSourceFor(yield* connections.current, connections.send, configured);
-    }),
+  const direct = yield* HttpClient.HttpClient;
+  const resolve = Effect.fn("LoomReleaseSource.resolve")(function* (configured: ReleaseSource) {
+    if (!followsLibraryReleases(configured.releaseBaseUrl)) return configured;
+    return yield* releaseSourceFor(yield* connections.current, connections.send, configured);
   });
+  const index = Effect.gen(function* () {
+    const source = yield* resolve({ releaseBaseUrl: undefined, httpClient: direct });
+    if (source.releaseBaseUrl === undefined) return null;
+    return yield* readLibraryIndex({
+      releaseBaseUrl: source.releaseBaseUrl,
+      httpClient: source.httpClient,
+    });
+  }).pipe(Effect.withSpan("LoomReleaseSource.index"));
+  return LoomReleaseSource.of({ resolve, index });
 });
 
 export const layer = Layer.effect(LoomReleaseSource, make);
 
 /** Every update from the configured source, as on a computer enrolled in no Library. */
-export const configuredOnly = LoomReleaseSource.of({ resolve: Effect.succeed });
-
-export interface LibraryReleases {
-  readonly releaseBaseUrl: string;
-  readonly httpClient: HttpClient.HttpClient;
-}
+export const configuredOnly = LoomReleaseSource.of({
+  resolve: Effect.succeed,
+  index: Effect.succeed(null),
+});
 
 /**
  * The Library's releases for `t3 update` on an enrolled computer, read with the sign-in its server
@@ -197,34 +244,18 @@ export class LibraryReleaseIndexError extends Schema.TaggedError<LibraryReleaseI
   }
 }
 
-const decodeReleaseIndex = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(
-    Schema.Array(
-      Schema.Struct({ tag_name: Schema.String, draft: Schema.optional(Schema.Boolean) }),
-    ),
-  ),
-);
-
 /** The newest `channel` release a Library mirrors, from its index in GitHub's release-list shape. */
 export const newestLibraryRelease = Effect.fn("LoomReleaseSource.newestLibraryRelease")(function* (
   releases: LibraryReleases,
   channel: CliReleaseChannel,
 ) {
-  const unreadable = new LibraryReleaseIndexError({
-    reason: "Could not list t3 releases from your Library.",
-  });
-  const body = yield* releases.httpClient
-    .get(`${releases.releaseBaseUrl}/${LOOM_RELEASE_INDEX_FILE}`)
-    .pipe(
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.flatMap((response) => response.text),
-      Effect.timeoutOrElse({ duration: "30 seconds", orElse: () => Effect.fail(unreadable) }),
-      Effect.mapError(() => unreadable),
-    );
-  const version = newestCliReleaseVersion(
-    yield* decodeReleaseIndex(body).pipe(Effect.mapError(() => unreadable)),
-    channel,
+  const index = yield* readLibraryIndex(releases).pipe(
+    Effect.mapError(
+      () =>
+        new LibraryReleaseIndexError({ reason: "Could not list t3 releases from your Library." }),
+    ),
   );
+  const version = newestCliReleaseVersion(index, channel);
   if (version === undefined)
     return yield* new LibraryReleaseIndexError({
       reason: `Your Library has no published ${channel} release.`,

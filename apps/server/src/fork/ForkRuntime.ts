@@ -19,6 +19,7 @@ import type { UpstreamSupervisor } from "./upstream-supervisor/UpstreamSuperviso
 import type { ProjectStorageInventory } from "./project-lifecycle/ProjectStorageInventory.ts";
 import type { UpdatePlans } from "./machine-updates/UpdatePlans.ts";
 import type { UpdateHandoff } from "./machine-updates/UpdateHandoff.ts";
+import type { LoomReleaseSource } from "./releases/LoomReleaseSource.ts";
 import type { SessionToolPolicy } from "./mcp/SessionToolPolicy.ts";
 import type { AttentionRetry } from "./attention/AttentionRetry.ts";
 import type { SkillRegistryService } from "./skill-registry/SkillRegistryService.ts";
@@ -118,6 +119,7 @@ export type ForkServices =
   | ProjectStorageInventory
   | UpdatePlans
   | UpdateHandoff
+  | LoomReleaseSource
   | AttentionRetry
   | SkillRegistryService
   | LibraryPublishingCredential

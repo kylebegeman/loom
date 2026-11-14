@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { environmentReleaseCheckAtom, releaseCheckError } from "./environmentUpdateCheck";
 
+// fork: private-releases - An environment with no Library mirror reads GitHub, which these stub.
+vi.mock("../../fork/connections/releaseIndex", () => ({
+  readEnvironmentReleaseIndex: async () => null,
+}));
+
 function stubHangingFetch() {
   const { promise: called, resolve } = Promise.withResolvers<AbortSignal>();
   vi.stubGlobal("fetch", (_url: string, init: { signal: AbortSignal }) => {

@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
+import { RELEASE_INDEX_FEATURE } from "@t3tools/contracts/fork";
 import {
   AGENT_TOOL_FAMILIES_FEATURE,
   LIBRARY_REPOSITORY_ACCESS_FEATURE,
@@ -51,6 +52,7 @@ import { isLibraryAuthorityEnv } from "./project-library/authority.ts";
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   PROJECT_STORAGE_FEATURE,
   UPDATE_PLAN_FEATURE,
+  RELEASE_INDEX_FEATURE,
   "upstream-supervisor",
   AGENT_TOOL_FAMILIES_FEATURE,
   LIVE_AGENT_TOOL_POLICY_FEATURE,

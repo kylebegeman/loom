@@ -137,6 +137,7 @@ export * from "./project-storage.ts";
 export * from "./compatibility.ts";
 
 export * from "./update-plans.ts";
+export * from "./release-index.ts";
 
 export * from "./cloudflare-access.ts";
 
