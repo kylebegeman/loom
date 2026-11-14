@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   accountLinkedComputers,
   createAccountLinkAtoms,
@@ -8,8 +9,15 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 
-export const accountLinks = createAccountLinkAtoms(connectionAtomRuntime);
+export const accountLinks = createAccountLinkAtoms(connectionAtomRuntime, (environmentId) =>
+  serverEnvironment.configValueAtom(environmentId),
+);
+
+/** What `environmentId`'s agents reach over links, for composer mentions to follow. */
+export const useAgentLinkReach = (environmentId: EnvironmentId | null) =>
+  useAtomValue(accountLinks.agentReach(environmentId));
 
 /**
  * How `environmentId` lists its links: `offers` while its Linked environments beta is on,

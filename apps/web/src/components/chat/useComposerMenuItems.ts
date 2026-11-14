@@ -32,6 +32,8 @@ import { searchProviderSkills } from "../../providerSkillSearch";
 import { useVisibleThreadShells } from "~/state/entities";
 import { useEnvironmentIdentities, useEnvironmentMachines } from "~/state/environments";
 import { offersLinkedEnvironmentsAtom } from "~/state/peerLinks";
+import { agentReachable } from "@t3tools/client-runtime/fork"; // fork: account-links
+import { useAgentLinkReach } from "~/fork/connections/accountLinksState"; // fork: account-links
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -125,6 +127,7 @@ export function useComposerMenuItems({
   const environmentIdentities = useEnvironmentIdentities();
   const environmentMachines = useEnvironmentMachines();
   const offersMachines = useAtomValue(offersLinkedEnvironmentsAtom(environmentId));
+  const machineReach = useAgentLinkReach(environmentId); // fork: account-links
   const mentionableEnvironments = environmentIdentities.map((identity) => ({
     ...identity,
     machine: environmentMachines.get(identity.environmentId) ?? ("server" as const),
@@ -208,7 +211,7 @@ export function useComposerMenuItems({
         // An answer to an agent's question carries thread links, not machines.
         ...(questionAttachmentTarget === null && offersMachines
           ? matchComposerEnvironmentItems({
-              environments: mentionableEnvironments,
+              environments: agentReachable(machineReach, mentionableEnvironments), // fork: account-links
               environmentId,
               query: composerTrigger.query,
             })

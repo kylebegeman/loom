@@ -9,11 +9,13 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate"; // fork: account-links
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as HttpBody from "effect/http/HttpBody";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError"; // fork: account-links
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -47,6 +49,8 @@ export class PeerMcpClient extends Context.Service<
       readonly limits: PeerCallLimits;
       /** The thread here the call is made for, sent as `T3-Sender-Thread`. */
       readonly sender?: OrchestrationV2LinkedSender;
+      /** Changes nothing there, as a wait or a read, so a route that drops it gets it again. */
+      readonly repeatable?: boolean; // fork: account-links
       readonly success: S;
     }) => Effect.Effect<S["Type"], OrchestratorMcpFailure>;
   }
@@ -82,6 +86,24 @@ const fromLinkError = (error: PeerLinkError) =>
           : "orchestration_error",
     message: error.message,
   });
+
+// fork: account-links -- a dropped wait goes out again, and the link says why it dropped.
+/** How many more times a repeatable call goes out after its route dropped it. */
+export const DROPPED_ROUTE_RETRIES = 2;
+
+/** The connection failed before or while the peer answered, as a reset tailnet or edge path does. */
+const droppedRoute = (error: unknown) =>
+  HttpClientError.isHttpClientError(error) &&
+  (error.reason._tag === "TransportError" || error.reason._tag === "DecodeError");
+
+/** The link's last error, with what the socket said, which fetch hides behind "fetch failed". */
+const outcomeError = (error: { readonly message: string }) => {
+  const socket = HttpClientError.isHttpClientError(error) ? error.reason.cause : undefined;
+  const reason = Predicate.hasProperty(socket, "cause") ? socket.cause : socket;
+  if (!(reason instanceof Error)) return error.message;
+  const code = Predicate.hasProperty(reason, "code") ? ` (${String(reason.code)})` : "";
+  return `${error.message}: ${reason.message}${code}`;
+};
 
 /** Not final, so a task already running there resumes once the beta is on there again. */
 const linkedEnvironmentsOffThere = new OrchestratorMcpFailure({
@@ -278,8 +300,12 @@ const make = Effect.gen(function* () {
     },
     (effect, input) =>
       effect.pipe(
-        Effect.tapError((error) =>
-          links.recordOutcome(input.environmentId, { error: error.message }),
+        // fork: account-links -- before the outcome, so a retried drop leaves the link healthy.
+        input.repeatable === true
+          ? Effect.retry({ times: DROPPED_ROUTE_RETRIES, while: droppedRoute })
+          : (call) => call,
+        Effect.tapError(
+          (error) => links.recordOutcome(input.environmentId, { error: outcomeError(error) }), // fork: account-links
         ),
         // A refusal is still an answer: the link works, so only this call fails.
         Effect.tap(() => links.recordOutcome(input.environmentId, { error: null })),

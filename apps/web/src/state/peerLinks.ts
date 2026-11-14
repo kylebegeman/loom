@@ -1,18 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
-import {
-  linkableMachines,
-  linkedEnvironmentNames,
-  offersLinkedEnvironments,
-} from "@t3tools/client-runtime/link-request";
+import { agentReachable, reachesOverLinks } from "@t3tools/client-runtime/fork"; // fork: account-links
+import { linkableMachines, linkedEnvironmentNames } from "@t3tools/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@t3tools/client-runtime/state/peerLinks";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect, useEffectEvent } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
-import { useListsLinkedEnvironments } from "../fork/connections/accountLinksState"; // fork: account-links
+import { accountLinks, useListsLinkedEnvironments } from "../fork/connections/accountLinksState"; // fork: account-links
 import { useEnvironmentIdentities, useEnvironments } from "./environments";
-import { environmentPresentations } from "./presentation";
 import { relayEnvironmentDiscovery } from "./relay";
 import { useEnvironmentQuery } from "./query";
 import { useEnvironmentsWithScope } from "./session";
@@ -22,8 +18,8 @@ export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtom
 
 /** Whether `environmentId` offers links, so its threads may name another machine. */
 export const offersLinkedEnvironmentsAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get) =>
-    offersLinkedEnvironments(get(environmentPresentations.serverConfigsAtom).get(environmentId)),
+  Atom.make(
+    (get) => reachesOverLinks(get(accountLinks.agentReach(environmentId))), // fork: account-links
   ).pipe(Atom.withLabel(`peer-links:offered:${environmentId}`)),
 );
 
@@ -40,6 +36,7 @@ export function useLinkedEnvironments(
   const offered = useAtomValue(
     environmentId === null ? offersNoLinksAtom : offersLinkedEnvironmentsAtom(environmentId),
   );
+  const reach = useAtomValue(accountLinks.agentReach(environmentId)); // fork: account-links
   const identities = useEnvironmentIdentities();
   const links = useEnvironmentQuery(
     offered && environmentId !== null
@@ -47,7 +44,7 @@ export function useLinkedEnvironments(
       : null,
   );
   return linkedEnvironmentNames({
-    links: offered ? (links.data?.links ?? []) : [],
+    links: offered ? agentReachable(reach, links.data?.links ?? []) : [], // fork: account-links
     environments: identities,
   });
 }
