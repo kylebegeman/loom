@@ -5,10 +5,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Sink from "effect/Sink";
-import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { printingSpawner } from "./routingTestHost.ts";
 import { setSwitchboardEnvironment, setSwitchboardEnabled } from "./switchboard.ts";
 import {
   fetchSharedCodexCatalog,
@@ -96,6 +95,7 @@ it.effect(
           Effect.provideService(HostProcess.Environment, {
             LOOM_SWITCHBOARD_CONTROLLER_URL: "https://hub.example.test",
           }),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, printingSpawner("")),
         );
         const selection = {
           instanceId: ProviderInstanceId.make("codex"),
@@ -257,23 +257,7 @@ it.effect("fetches the shared catalog with the client credential and rejects par
       requests.push({ url: request.url, authorization: request.headers.authorization });
       return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status })));
     });
-    const spawner = ChildProcessSpawner.make(() =>
-      Effect.succeed(
-        ChildProcessSpawner.makeHandle({
-          pid: ChildProcessSpawner.ProcessId(1),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
-          isRunning: Effect.succeed(false),
-          kill: () => Effect.void,
-          unref: Effect.succeed(Effect.void),
-          stdin: Sink.drain,
-          getInputFd: () => Sink.drain,
-          stderr: Stream.empty,
-          all: Stream.empty,
-          stdout: Stream.succeed(new TextEncoder().encode(key)),
-          getOutputFd: () => Stream.empty,
-        }),
-      ),
-    );
+    const spawner = printingSpawner(key);
     const fetch = fetchSharedCodexCatalog(
       {
         url: "https://dorothy.example.test/api/loom/switchboard",

@@ -7,10 +7,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
+import * as Option from "effect/Option";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { SwitchboardAvailability, switchboardLimits } from "./limits.ts";
-import { resolveSwitchboardController } from "./switchboard.ts";
+import { resolveSwitchboardControllerRoute, switchboardControllerHeaders } from "./switchboard.ts";
 
 class SwitchboardStatusOperationError extends Schema.TaggedError<SwitchboardStatusOperationError>()(
   "SwitchboardStatusOperationError",
@@ -42,9 +44,12 @@ export const makeSwitchboardLimitsReader = Effect.fn("SwitchboardStatus.makeLimi
   function* <E>(getSettings: Effect.Effect<ServerSettings, E>) {
     const http = yield* HttpClient.HttpClient;
     const hostEnvironment = yield* HostProcess.Environment;
+    const platform = yield* HostProcess.Platform;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const environment = {
       LOOM_SWITCHBOARD_URL: hostEnvironment.LOOM_SWITCHBOARD_URL,
       LOOM_SWITCHBOARD_CONTROLLER_URL: hostEnvironment.LOOM_SWITCHBOARD_CONTROLLER_URL,
+      LOOM_SWITCHBOARD_KEY_HELPER: hostEnvironment.LOOM_SWITCHBOARD_KEY_HELPER,
     };
 
     // Switchboard caches account readings; Loom never probes subscriptions for this.
@@ -56,11 +61,17 @@ export const makeSwitchboardLimitsReader = Effect.fn("SwitchboardStatus.makeLimi
       // A remote hub with no controller setting, or an invalid one, is a setup gap
       // the picker can name, not an outage.
       const controller = yield* Effect.try({
-        try: () => resolveSwitchboardController(environment),
+        try: () => resolveSwitchboardControllerRoute(environment, platform),
         catch: (cause) => new SwitchboardStatusOperationError({ cause }),
       }).pipe(Effect.orElseSucceed(() => null));
       if (controller === null) return UNCONFIGURED;
-      const response = yield* http.get(`${controller}/api/v1/availability`);
+      const headers = yield* switchboardControllerHeaders(controller, hostEnvironment).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      if (Option.isNone(headers)) return UNAVAILABLE;
+      const response = yield* http.get(`${controller.url}/api/v1/availability`, {
+        headers: headers.value,
+      });
       if (response.status !== 200) return UNAVAILABLE;
       const snapshot = yield* response.json.pipe(Effect.flatMap(decodeAvailability));
       return switchboardLimits(snapshot, yield* Clock.currentTimeMillis);

@@ -4,7 +4,9 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ServerConfig from "../../config.ts";
 
@@ -61,3 +63,23 @@ export const makeRoutingTestHost = Effect.gen(function* () {
       ),
   };
 });
+
+/** Stands in for a key helper: every child prints `output` and exits cleanly. */
+export const printingSpawner = (output: string) =>
+  ChildProcessSpawner.make(() =>
+    Effect.succeed(
+      ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(1),
+        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+        isRunning: Effect.succeed(false),
+        kill: () => Effect.void,
+        unref: Effect.succeed(Effect.void),
+        stdin: Sink.drain,
+        getInputFd: () => Sink.drain,
+        stderr: Stream.empty,
+        all: Stream.empty,
+        stdout: Stream.succeed(new TextEncoder().encode(output)),
+        getOutputFd: () => Stream.empty,
+      }),
+    ),
+  );
