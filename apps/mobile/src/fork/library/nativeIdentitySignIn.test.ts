@@ -44,6 +44,12 @@ vi.mock("../cloudflare-access/mobileAccess", () => ({
   },
 }));
 
+vi.mock("expo-crypto", () => ({
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  getRandomValues: (bytes: Uint8Array<ArrayBuffer>) => globalThis.crypto.getRandomValues(bytes),
+  digest: (algorithm: string, data: Uint8Array<ArrayBuffer>) =>
+    globalThis.crypto.subtle.digest(algorithm, data),
+}));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { scheme: "loom" } } }));
 vi.mock("expo-web-browser", () => ({ dismissAuthSession: native.dismissAuthSession }));
 vi.mock("../identity-renewal/mobileIdentityRenewal", () => ({
