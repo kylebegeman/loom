@@ -42,6 +42,7 @@ export const AccountProviderResponse = Schema.Struct({
   value: Schema.NullOr(Schema.RedactedFromValue(Schema.String)),
 });
 export const AccountVaultRequest = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("github-terminal-close"), sessionId: VaultItemId }),
   Schema.Struct({ kind: Schema.Literal("github-terminal"), input: VaultGitHubTerminalRunInput }),
   Schema.Struct({
     kind: Schema.Literal("github"),
@@ -63,8 +64,10 @@ export const AccountVaultEnvelope = Schema.Struct({
 });
 export type AccountVaultEnvelope = typeof AccountVaultEnvelope.Type;
 export const AccountVaultResponse = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("github-terminal-close"), closed: Schema.Literal(true) }),
   Schema.Struct({
     kind: Schema.Literal("github-terminal"),
+    sessionId: VaultItemId,
     pin: VaultConnectionPin,
     credential: Schema.Struct({
       account: Schema.String,

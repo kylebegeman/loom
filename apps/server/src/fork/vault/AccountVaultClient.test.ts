@@ -10,6 +10,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
 import { HttpClientRequest, HttpClientResponse } from "effect/http";
 import { AccountWorkloads } from "../account-access/AccountWorkloads.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
@@ -174,6 +176,60 @@ it.effect("preserves GitHub results and reports an interrupted write without rep
       kind: "github",
       mode: "recover",
       operationId: interrupted.operationId,
+    });
+  }),
+);
+
+it.effect("closes a remote terminal activation when its caller scope ends", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const id = "b".repeat(32);
+    const scope = yield* Scope.make();
+    f.state.duringSend = ({ payload }) => {
+      const request = decodeRequest(payload);
+      f.state.reply =
+        request.kind === "github-terminal-close"
+          ? { kind: "github-terminal-close", closed: true }
+          : {
+              kind: "github-terminal",
+              sessionId: id,
+              pin: {
+                kind: "github",
+                item: {
+                  id,
+                  version: 1,
+                  label: "App",
+                  kind: "service-connection",
+                  state: "active",
+                  createdAt: "2026-01-01T00:00:00Z",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
+                hostname: "github.com",
+                account: "bot",
+                repositories: ["owner/repo"],
+                repository: "owner/repo",
+                destination: "https://github.com/owner/repo",
+              },
+              credential: { account: "bot", token: "synthetic-app-token" },
+            };
+    };
+    yield* f.service
+      .terminalCredential(
+        {
+          id,
+          expectedVersion: 1,
+          repository: "owner/repo",
+          command: { tool: "gh", argv: ["pr", "list"] },
+        },
+        THREAD,
+      )
+      .pipe(Effect.provideService(Scope.Scope, scope));
+    expect(f.sent).toHaveLength(1);
+    yield* Scope.close(scope, Exit.void);
+    expect(f.sent).toHaveLength(2);
+    expect(decodeRequest(f.sent[1]!.payload)).toEqual({
+      kind: "github-terminal-close",
+      sessionId: id,
     });
   }),
 );

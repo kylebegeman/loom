@@ -197,7 +197,7 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
       unsupported:
         "This connector supports github.com and documented GH/Git HTTPS commands on macOS and Linux.",
       "account-terminal-unavailable":
-        "GitHub terminal commands are not available for account Vault connections. Use the GitHub tools for repository actions or an SSH connection for Git.",
+        "Reusable GitHub tokens stay on the Vault computer. Use loom_vault_github for backend-mediated operations, a GitHub App connection for remote terminal commands, or an SSH connection for Git.",
     }[this.reason];
   }
 }

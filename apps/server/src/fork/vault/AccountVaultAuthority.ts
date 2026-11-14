@@ -15,6 +15,9 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
+import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -78,6 +81,26 @@ const make = Effect.gen(function* () {
     lock: Semaphore.Semaphore;
   };
   const sessions = new Map<string, Activation>();
+  const githubSessions = new Map<
+    string,
+    { lease: Lease; scope: Scope.Closeable; done: Deferred.Deferred<void> }
+  >();
+  const closeGitHub = (id: string) =>
+    Effect.suspend(() => {
+      const held = githubSessions.get(id);
+      githubSessions.delete(id);
+      return held
+        ? Scope.close(held.scope, Exit.void).pipe(
+            Effect.andThen(Deferred.succeed(held.done, undefined)),
+            Effect.asVoid,
+          )
+        : Effect.void;
+    });
+  yield* Effect.addFinalizer(() =>
+    Effect.forEach([...githubSessions.keys()], closeGitHub, { discard: true }),
+  );
+  const githubLifetime = yield* Effect.scope;
+  const githubPermit = yield* Semaphore.make(1);
   const authorize = (lease: Lease, pin: VaultConnectionPin) =>
     access.authorizeAccount(
       {
@@ -114,6 +137,12 @@ const make = Effect.gen(function* () {
       );
       const now = yield* Clock.currentTimeMillis;
       for (const [id, held] of sessions) if (held.session.expiresAt <= now) sessions.delete(id);
+      if (request.kind === "github-terminal-close") {
+        const held = githubSessions.get(request.sessionId);
+        if (!held || !sameWorkload(held.lease, lease)) return yield* denied();
+        yield* closeGitHub(request.sessionId);
+        return { kind: "github-terminal-close", closed: true };
+      }
       if (request.kind === "github" || request.kind === "github-terminal") {
         const input = request.input;
         const account = { lease, authorize: workloads.revalidate(lease) };
@@ -135,20 +164,49 @@ const make = Effect.gen(function* () {
               choices: report.choices,
               repair: report.repair,
             });
-          if (request.kind === "github-terminal")
-            return {
-              kind: "github-terminal" as const,
-              pin: report.selected,
-              credential: yield* github.terminalForAccount(
-                {
-                  id: report.selected.item.id,
-                  expectedVersion: report.selected.item.version,
-                  repository: input.repository,
-                  command: request.input.command,
-                },
-                account,
+          if (request.kind === "github-terminal") {
+            return yield* githubPermit.withPermit(
+              Effect.uninterruptibleMask((restore) =>
+                Effect.gen(function* () {
+                  if (githubSessions.size >= MAX_SESSIONS)
+                    return yield* new VaultError({ reason: "unavailable" });
+                  const id = (yield* random
+                    .uuidV4()
+                    .pipe(
+                      Effect.mapError(() => new VaultError({ reason: "unavailable" })),
+                    )).replaceAll("-", "");
+                  const scope = yield* Scope.make();
+                  const credential = yield* restore(
+                    github.terminalForAccount(
+                      {
+                        id: report.selected!.item.id,
+                        expectedVersion: report.selected!.item.version,
+                        repository: input.repository,
+                        command: request.input.command,
+                      },
+                      account,
+                    ),
+                  ).pipe(
+                    Effect.provideService(Scope.Scope, scope),
+                    Effect.onError(() => Scope.close(scope, Exit.void)),
+                  );
+                  const done = yield* Deferred.make<void>();
+                  githubSessions.set(id, { lease, scope, done });
+                  yield* Deferred.await(done).pipe(
+                    Effect.timeoutOption("3 minutes"),
+                    Effect.andThen(closeGitHub(id)),
+                    Effect.forkIn(githubLifetime),
+                  );
+                  return {
+                    kind: "github-terminal" as const,
+                    sessionId: id,
+                    pin: report.selected!,
+                    credential,
+                  };
+                }),
               ),
-            };
+            );
+          }
           return yield* github.runForAccount(
             {
               id: report.selected.item.id,

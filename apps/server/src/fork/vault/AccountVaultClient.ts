@@ -19,6 +19,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClientRequest, HttpIncomingMessage } from "effect/http";
 import * as AccountWorkloads from "../account-access/AccountWorkloads.ts";
@@ -41,7 +42,8 @@ export class AccountVaultClient extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<
       Extract<AccountVaultResponse, { kind: "github-terminal" }>,
-      VaultError | VaultGitHubError | VaultConnectionError
+      VaultError | VaultGitHubError | VaultConnectionError,
+      Scope.Scope
     >;
     readonly github: (
       input: VaultGitHubRunInput,
@@ -141,14 +143,25 @@ const make = Effect.gen(function* () {
         }),
       );
     }),
-    terminalCredential: Effect.fn("AccountVaultClient.terminalCredential")(
-      function* (input, threadId) {
-        const result = yield* post({ kind: "github-terminal", input }, threadId).pipe(
-          Effect.catchTags({ VaultSshError: () => Effect.fail(unavailable()) }),
-        );
-        if (result.kind !== "github-terminal") return yield* unavailable();
-        return result;
-      },
+    terminalCredential: Effect.fn("AccountVaultClient.terminalCredential")((input, threadId) =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const result = yield* restore(post({ kind: "github-terminal", input }, threadId)).pipe(
+            Effect.catchTags({ VaultSshError: () => Effect.fail(unavailable()) }),
+          );
+          if (result.kind !== "github-terminal") return yield* unavailable();
+          yield* Effect.addFinalizer(() =>
+            post({ kind: "github-terminal-close", sessionId: result.sessionId }, threadId).pipe(
+              Effect.catch(() =>
+                Effect.logWarning(
+                  "Account GitHub token cleanup failed; the bounded activation will expire.",
+                ),
+              ),
+            ),
+          );
+          return result;
+        }),
+      ),
     ),
     github: Effect.fn("AccountVaultClient.github")(function* (input, threadId) {
       const tracked =

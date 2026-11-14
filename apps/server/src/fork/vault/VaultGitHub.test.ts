@@ -32,6 +32,8 @@ import { VaultGitHubToolkit, vaultGitHubHandlers } from "./github-mcp.ts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as VaultCore from "./VaultCore.ts";
@@ -63,7 +65,12 @@ const fixture = Effect.gen(function* () {
     session: () =>
       Effect.sync(() => {
         atSession();
-        return { account, token: Redacted.make("synthetic-operation-token"), expiresAt };
+        return {
+          account,
+          token: Redacted.make("synthetic-operation-token"),
+          expiresAt,
+          installationToken: true,
+        };
       }),
     probe: () =>
       beforeProbe.pipe(
@@ -1522,6 +1529,43 @@ it.effect(
         repository: input.repository,
         destination: vaultGitHubDestination(input.repository),
       };
+      const terminalInput = {
+        id: input.id,
+        expectedVersion: 1,
+        repository: input.repository,
+        command: { tool: "gh" as const, argv: ["pr", "list"] },
+      };
+      const patRefusal = yield* f.service
+        .terminalForAccount(terminalInput, account)
+        .pipe(Effect.result);
+      expect(patRefusal._tag).toBe("Failure");
+      if (patRefusal._tag === "Failure")
+        expect(patRefusal.failure).toMatchObject({ reason: "account-terminal-unavailable" });
+      yield* f.service.save(
+        {
+          ...f.input,
+          operationId: yield* f.id,
+          expectedVersion: 1,
+          credential: {
+            type: "app",
+            appId: "7",
+            installationId: "42",
+            privateKey: Redacted.make("synthetic-app-key"),
+          },
+        },
+        "admin",
+        Effect.void,
+      );
+      const releasesBefore = f.releases();
+      const tokenScope = yield* Scope.make();
+      yield* f.service
+        .terminalForAccount({ ...terminalInput, expectedVersion: 2 }, account)
+        .pipe(Effect.provideService(Scope.Scope, tokenScope));
+      expect(f.releases()).toBe(releasesBefore);
+      yield* Scope.close(tokenScope, Exit.void);
+      expect(f.releases()).toBe(releasesBefore + 1);
+      input.expectedVersion = 2;
+      pin.item = (yield* f.core.inspect(input.id))!;
       f.state.thread = { ...f.state.thread, activeRunId: RunId.make("source-run") };
       f.routeTerminal(
         (raw) =>
@@ -1531,7 +1575,12 @@ it.effect(
               account,
             )
             .pipe(
-              Effect.map((credential) => ({ kind: "github-terminal" as const, pin, credential })),
+              Effect.map((credential) => ({
+                kind: "github-terminal" as const,
+                sessionId: "a".repeat(32),
+                pin,
+                credential,
+              })),
             ),
         () =>
           Effect.succeed({
@@ -1542,7 +1591,7 @@ it.effect(
       const completed = yield* f.service.terminal(
         {
           id: input.id,
-          expectedVersion: 1,
+          expectedVersion: 2,
           repository: input.repository,
           command: { tool: "gh", argv: ["pr", "list"] },
         },
@@ -1556,6 +1605,7 @@ it.effect(
             f.state.thread = { ...f.state.thread, activeRunId: RunId.make("replacement-run") };
             return {
               kind: "github-terminal" as const,
+              sessionId: "a".repeat(32),
               pin,
               credential: { account: "loom-bot", token: Redacted.make("synthetic-private-token") },
             };

@@ -25,6 +25,10 @@ import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { AccountWorkloads } from "../account-access/AccountWorkloads.ts";
 import * as Authority from "./AccountVaultAuthority.ts";
+import { VaultGitHub } from "./VaultGitHub.ts";
+import { VaultConnections } from "./VaultConnections.ts";
+import * as Redacted from "effect/Redacted";
+import * as Deferred from "effect/Deferred";
 import * as SshTransport from "./SshTransport.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 import { AccountVaultHttpRoutes } from "./account-http.ts";
@@ -70,24 +74,59 @@ const fixture = Effect.gen(function* () {
       },
     },
   };
-  const authority = yield* Authority.AccountVaultAuthority.pipe(
-    Effect.provide(
-      Authority.layer.pipe(
-        Layer.provide(
-          Layer.merge(
-            Layer.succeedContext(f.context),
-            Layer.mock(AccountWorkloads)({
-              accept: () => Effect.sync(() => state.lease),
-              revalidate: () =>
-                Effect.suspend(() =>
-                  state.revoked ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
-                ),
-            }),
-          ),
+  const released = yield* Deferred.make<void>();
+  let githubReleases = 0;
+  let syntheticGitHub = false;
+  const connections = Context.get(f.context, VaultConnections);
+  const realGitHub = Context.get(f.context, VaultGitHub);
+  const authorityContext = yield* Layer.build(
+    Authority.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeedContext(f.context),
+          Layer.succeed(VaultGitHub, {
+            ...realGitHub,
+            terminalForAccount: () =>
+              Effect.acquireRelease(
+                Effect.succeed({ account: "bot", token: Redacted.make("synthetic-app-token") }),
+                () =>
+                  Effect.sync(() => {
+                    githubReleases++;
+                  }).pipe(Effect.andThen(Deferred.succeed(released, undefined))),
+              ),
+          }),
+          Layer.succeed(VaultConnections, {
+            ...connections,
+            resolveForAccount: (input, account) =>
+              syntheticGitHub
+                ? Effect.succeed({
+                    state: "ready",
+                    choices: [],
+                    repair: null,
+                    selected: {
+                      kind: "github",
+                      item: f.key.item,
+                      hostname: "github.com",
+                      destination: "https://github.com/owner/repo",
+                      repository: "owner/repo",
+                      account: "bot",
+                      repositories: ["owner/repo"],
+                    },
+                  })
+                : connections.resolveForAccount(input, account),
+          }),
+          Layer.mock(AccountWorkloads)({
+            accept: () => Effect.sync(() => state.lease),
+            revalidate: () =>
+              Effect.suspend(() =>
+                state.revoked ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
+              ),
+          }),
         ),
       ),
     ),
   );
+  const authority = Context.get(authorityContext, Authority.AccountVaultAuthority);
   const call = Effect.fnUntraced(function* (request: AccountVaultRequest) {
     return yield* authority.execute(
       {
@@ -107,7 +146,19 @@ const fixture = Effect.gen(function* () {
     if (result.kind !== "open") return yield* new VaultError({ reason: "invalid-input" });
     return result;
   });
-  return { ...f, threadState: f.state, state, call, open, authority };
+  return {
+    ...f,
+    threadState: f.state,
+    state,
+    call,
+    open,
+    authority,
+    released,
+    githubReleases: () => githubReleases,
+    enableGitHub: () => {
+      syntheticGitHub = true;
+    },
+  };
 });
 
 it.effect("brokers public SSH frames only for the enrolled run and current item version", () =>
@@ -163,7 +214,7 @@ it.effect("brokers public SSH frames only for the enrolled run and current item 
     expect(
       (yield* f.call({ kind: "frame", input: { ...input, sequence: 1 } }).pipe(Effect.flip)).reason,
     ).toBe("conflict");
-  }).pipe(Effect.provide(dependencies)),
+  }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 
 it.effect("closes and expires activations without leaving a reusable signing session", () =>
@@ -193,7 +244,7 @@ it.effect("closes and expires activations without leaving a reusable signing ses
         .call({ kind: "close", input: { sessionId: second.session.sessionId } })
         .pipe(Effect.flip)).reason,
     ).toBe("denied");
-  }).pipe(Effect.provide(dependencies)),
+  }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 
 it.effect(
@@ -261,7 +312,7 @@ it.effect(
         _tag: "VaultError",
         reason: "denied",
       });
-    }).pipe(Effect.provide(dependencies)),
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 
 it.effect(
@@ -363,5 +414,44 @@ it.effect(
           )
           .pipe(Effect.flip)).reason,
       ).toBe("denied");
-    }).pipe(Effect.provide(dependencies)),
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect.each(["completion", "expiry"] as const)(
+  "retains the remote GitHub activation until %s",
+  (ending) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.enableGitHub();
+      const opened = yield* f.call({
+        kind: "github-terminal",
+        input: {
+          id: f.itemId,
+          expectedVersion: 1,
+          repository: "owner/repo",
+          command: { tool: "gh", argv: ["pr", "list"] },
+        },
+      });
+      if (opened.kind !== "github-terminal") throw new Error("Expected terminal activation");
+      expect(f.githubReleases()).toBe(0);
+      if (ending === "completion") {
+        const lease = f.state.lease;
+        f.state.lease = {
+          ...lease,
+          workload: { ...lease.workload, runId: RunId.make("another-run") },
+        };
+        expect(
+          (yield* f
+            .call({ kind: "github-terminal-close", sessionId: opened.sessionId })
+            .pipe(Effect.result))._tag,
+        ).toBe("Failure");
+        expect(f.githubReleases()).toBe(0);
+        f.state.lease = lease;
+        yield* f.call({ kind: "github-terminal-close", sessionId: opened.sessionId });
+      } else {
+        yield* TestClock.adjust("3 minutes");
+      }
+      yield* Deferred.await(f.released);
+      expect(f.githubReleases()).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

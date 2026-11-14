@@ -39,6 +39,7 @@ import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Scope from "effect/Scope";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
@@ -72,7 +73,11 @@ export class VaultGitHub extends Context.Service<
         >[0]["lease"];
         readonly authorize: Effect.Effect<void, VaultError>;
       },
-    ) => Effect.Effect<{ account: string; token: Redacted.Redacted<string> }, ConnectionFailure>;
+    ) => Effect.Effect<
+      { account: string; token: Redacted.Redacted<string> },
+      ConnectionFailure,
+      Scope.Scope
+    >;
     readonly runForAccount: (
       input: VaultGitHubRun,
       account: {
@@ -643,12 +648,14 @@ const make = Effect.gen(function* () {
       return yield* permits.withPermits(1)(
         Effect.gen(function* () {
           const record = yield* check(input);
+          if (record.stored.credential.type !== "app")
+            return yield* new VaultGitHubError({ reason: "account-terminal-unavailable" });
           const current = yield* session(record, input.repository);
           yield* authorize;
           return { account: current.account, token: current.token };
         }),
       );
-    }, Effect.scoped),
+    }),
     runForAccount: Effect.fn("VaultGitHub.runForAccount")(function* (input, account) {
       const authorize = access
         .authorizeAccount(

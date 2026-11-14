@@ -50,8 +50,9 @@ signed-in account, then choose **Link Vault owner to Loom account**. Both owners
 a computer's publishing connection cannot approve the account identity by itself.
 
 The link keeps the local owner, saved items, versions, access rules and credential protection.
-It does not move the Vault. The Library discovers the Vault computer and forwards account
-requests there. **Unlink Loom account** stops account use and keeps
+It does not move the Vault. The link pins the approved Vault computer and its machine key at
+the Library, which forwards account requests there. Other computers may keep their own Vault
+without changing the account backend. **Unlink Loom account** stops account use and keeps
 local ownership; **Turn off account access** stops new use without removing the link.
 
 ## Answer a private request with a saved item
@@ -99,8 +100,10 @@ In the account Vault, confirm **This is my personal account** and choose **Enabl
 once to let agents on your approved computers use its saved SSH and GitHub connections. Each
 operation checks the computer's enrollment, active full-access/default run, selected item version
 and destination. SSH private keys stay on the Vault computer. SSH, Git and supported GitHub
-terminal commands run on the execution computer; GitHub terminal commands receive the selected
-credential for that operation without changing ordinary gh/Git configuration. Structured GitHub
+terminal commands run on the execution computer. Remote GitHub terminal commands require a
+GitHub App connection and receive a repository-limited installation token, revoked when the command
+ends or its bounded activation expires. Reusable tokens stay on the Vault computer; use
+`loom_vault_github` for backend-mediated operations with those connections. Structured GitHub
 actions run on the Vault computer through the Library. If a write loses its reply, its returned
 operation ID can recover the retained receipt without repeating the action. An unknown outcome
 still requires inspecting GitHub before another write.
