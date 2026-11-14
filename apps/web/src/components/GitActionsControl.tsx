@@ -5,10 +5,7 @@ import {
   type GitActionRequest,
 } from "~/fork/source-control-cockpit/commands";
 import { gitPaletteActionHint } from "./GitActionsControl.logic";
-import {
-  buildGitRecoveryPrompt,
-  gitWaitingLabel,
-} from "@t3tools/client-runtime/state/vcs";
+import { buildGitRecoveryPrompt, gitWaitingLabel } from "@t3tools/client-runtime/state/vcs";
 import type { VcsActionState } from "@t3tools/client-runtime/state/vcs";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
