@@ -148,7 +148,7 @@ export class SwitchboardAccount extends Context.Service<
     readonly status: Effect.Effect<SwitchboardRouteStatus>;
     /** Checks the hub now, enrolling when needed, as the background loop does on its schedule. */
     readonly refresh: Effect.Effect<SwitchboardRouteStatus>;
-    /** Drops this computer's credential and enrolls again now. */
+    /** Enrolls again now. The current credential keeps routing until the hub issues its successor. */
     readonly reconnect: Effect.Effect<SwitchboardRouteStatus>;
     /** On the hub: revokes one computer's credential. */
     readonly revokeComputer: (
@@ -363,12 +363,12 @@ const make = Effect.gen(function* () {
   });
 
   const cycle = Effect.fn("SwitchboardAccount.cycle")(
-    function* (command: SwitchboardKeyCommand) {
+    function* (command: SwitchboardKeyCommand, renew: boolean) {
       const stored = yield* readRoute;
       const credential = yield* readCredential;
       if (stored !== undefined && !routesThrough(accountRoute(stored, command)))
         return yield* problem("unavailable", OVERRIDDEN);
-      if (stored !== undefined && Option.isSome(credential)) {
+      if (stored !== undefined && Option.isSome(credential) && !renew) {
         hub = stored.hub;
         const result = yield* check(stored, credential.value);
         if (result === "unreachable")
@@ -438,7 +438,8 @@ const make = Effect.gen(function* () {
     note = UNSUPPORTED;
   }
 
-  const refresh = command === undefined ? status : cycle(command).pipe(Effect.andThen(status));
+  const refresh =
+    command === undefined ? status : cycle(command, false).pipe(Effect.andThen(status));
   if (command !== undefined)
     yield* Effect.sleep(FIRST_CHECK).pipe(
       Effect.andThen(
@@ -454,13 +455,7 @@ const make = Effect.gen(function* () {
   return SwitchboardAccount.of({
     status,
     refresh,
-    reconnect:
-      command === undefined
-        ? status
-        : Effect.gen(function* () {
-            yield* lock.withPermit(forget);
-            return yield* refresh;
-          }).pipe(Effect.withSpan("SwitchboardAccount.reconnect")),
+    reconnect: command === undefined ? status : cycle(command, true).pipe(Effect.andThen(status)),
     revokeComputer: Effect.fn("SwitchboardAccount.revokeComputer")(function* (environmentId) {
       // A failed write leaves the computer listed, which the returned status shows.
       yield* clients.revoke(environmentId).pipe(

@@ -208,6 +208,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard acco
           f.state.hub = { status: 503, refusal: undefined };
           const outage = yield* account.refresh;
           expect(outage).toMatchObject({ source: "account", account: { state: "unreachable" } });
+          // A reconnect that cannot get a new credential keeps the one launches use.
+          expect((yield* account.reconnect).source).toBe("account");
+          expect(yield* f.stored).toBe(f.credential(1));
           f.state.hub = { status: 401, refusal: "authentication" };
           const waiting = yield* account.refresh;
           expect(waiting).toMatchObject({ source: "local", account: { state: "connecting" } });
@@ -220,6 +223,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard acco
             account: { state: "connected", problem: null },
           });
           expect(yield* f.stored).toBe(f.credential(2));
+          expect((yield* account.reconnect).account.state).toBe("connected");
+          expect(yield* f.stored).toBe(f.credential(3));
         }).pipe(Effect.provide(f.layer));
       }),
     ),
