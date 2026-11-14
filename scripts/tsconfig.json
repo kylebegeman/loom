@@ -8,6 +8,7 @@
   "include": [
     "**/*.ts",
     "../apps/desktop/src/updates/releaseNotes.ts",
-    "../apps/desktop/src/updates/updateChannels.ts"
+    "../apps/desktop/src/updates/updateChannels.ts",
+    "../apps/server/src/fork/project-library/assets/b2Signing.ts"
   ]
 }

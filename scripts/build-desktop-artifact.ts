@@ -2715,6 +2715,32 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   };
 });
 
+// fork: private-releases
+export class InvalidLibraryFeedUrlError extends Schema.TaggedError<InvalidLibraryFeedUrlError>()(
+  "InvalidLibraryFeedUrlError",
+  {},
+) {
+  override get message(): string {
+    return "T3CODE_DESKTOP_UPDATE_FEED_URL must be an https URL.";
+  }
+}
+
+/** A Library release feed, which an enrolled computer reads with its own Library credential. */
+export const resolveLibraryFeedPublishConfig = Effect.fn("resolveLibraryFeedPublishConfig")(
+  function* (updateChannel: "latest" | "nightly") {
+    const url = Option.getOrUndefined(
+      yield* Config.String("T3CODE_DESKTOP_UPDATE_FEED_URL").pipe(Config.option),
+    )?.trim();
+    if (!url) return undefined;
+    if (URL.parse(url)?.protocol !== "https:") return yield* new InvalidLibraryFeedUrlError();
+    return {
+      provider: "generic" as const,
+      url,
+      ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
+    };
+  },
+);
+
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
 }
@@ -2813,7 +2839,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   // Missing publish config infers a GitHub feed from tokens; staging has no repository, so manifest generation would crash.
   buildConfig.publish = null;
   if (!isDesktopPreviewVersion(version)) {
-    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+    const publishConfig =
+      (yield* resolveLibraryFeedPublishConfig(updateChannel)) ?? // fork: private-releases
+      (yield* resolveGitHubPublishConfig(updateChannel));
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
     } else if (mockUpdates) {

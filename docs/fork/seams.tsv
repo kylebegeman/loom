@@ -1829,3 +1829,4 @@ packages/client-runtime/src/connection/routes.ts	connect-ui	1
 apps/server/src/cloud/selfUpdate.ts	private-releases	5
 apps/server/src/server.ts	private-releases	3
 apps/server/src/cloud/selfUpdate.test.ts	private-releases	2
+scripts/build-desktop-artifact.ts	private-releases	2

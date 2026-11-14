@@ -215,9 +215,15 @@ describe("publisher CLI pins", () => {
   });
 
   it("rejects extra arguments on commands that cannot use a publication pin", () => {
-    for (const command of ["enable", "disable", "status", "next-version"]) {
+    for (const command of ["enable", "disable", "status", "next-version", "mirror"]) {
       expect(() => parseUpdateArgs(command, pinArgs)).toThrow("Usage:");
     }
+    expect(() => parseUpdateArgs("mirror", [])).toThrow("Usage:");
+    expect(() => parseUpdateArgs("mirror", ["loom-v0.0.46"])).toThrow("Usage:");
+    expect(parseUpdateArgs("mirror", ["0.0.46-nightly.20261013.3044"])).toEqual({
+      command: "mirror",
+      version: "0.0.46-nightly.20261013.3044",
+    });
     expect(() => parseUpdateArgs(undefined, [])).toThrow("Usage:");
     expect(() => parseUpdateArgs("unknown", [])).toThrow("Usage:");
     expect(() => parseUpdateArgs("next-version", ["v0.0.46", "v0.0.47"])).toThrow("Usage:");
@@ -1104,16 +1110,37 @@ describe("Loom update publishing", () => {
     }
   });
 
+  it("requires the configured Library feed once releases are mirrored", () => {
+    const feed = "https://library.example/api/loom/releases";
+    expect(() =>
+      validateFeedConfig(`provider: generic\nurl: ${feed}\nchannel: nightly\n`, feed),
+    ).not.toThrow();
+    for (const raw of [
+      "provider: github\nowner: kylebegeman\nrepo: loom",
+      "provider: generic\nurl: https://other.example/api/loom/releases",
+      `provider: github\nurl: ${feed}`,
+    ]) {
+      expect(() => validateFeedConfig(raw, feed)).toThrow("Library release feed");
+    }
+  });
+
   it("builds with the Loom feed and removes inherited Electron and build overrides", () => {
     const env = buildEnvironment("/tmp/loom-build", {
       ELECTRON_RUN_AS_NODE: "1",
       T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
       T3CODE_DESKTOP_MOCK_UPDATES: "true",
       T3CODE_DESKTOP_SKIP_BUILD: "true",
+      T3CODE_DESKTOP_UPDATE_FEED_URL: "https://dev.example/api/loom/releases",
       VITE_HTTP_URL: "http://localhost:3000",
       VITE_WS_URL: "ws://localhost:3000",
     });
     expect(env.T3CODE_DESKTOP_UPDATE_REPOSITORY).toBe("kylebegeman/loom");
+    expect(env).not.toHaveProperty("T3CODE_DESKTOP_UPDATE_FEED_URL");
+    const feed = "https://library.example/api/loom/releases";
+    expect(
+      buildEnvironment("/tmp/loom-build", {}, undefined, false, undefined, feed)
+        .T3CODE_DESKTOP_UPDATE_FEED_URL,
+    ).toBe(feed);
     expect(env).not.toHaveProperty("ELECTRON_RUN_AS_NODE");
     expect(env).not.toHaveProperty("T3CODE_DESKTOP_MOCK_UPDATES");
     expect(env).not.toHaveProperty("T3CODE_DESKTOP_SKIP_BUILD");

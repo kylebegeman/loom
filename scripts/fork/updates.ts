@@ -15,6 +15,16 @@ import * as NodeURL from "node:url";
 import { serializeUpdateManifest } from "../lib/update-manifest.ts";
 import { ensureRuntimeReleaseAssets } from "./runtime-release.ts";
 import {
+  feedVersion,
+  mirrorRelease,
+  parseReleaseMirrorConfig,
+  publishReleaseIndex,
+  readMirrored,
+  readReleaseMirrorConfig,
+  releaseIndex,
+  type IndexedRelease,
+} from "./release-mirror.ts";
+import {
   loomConnectBuildEnvironment,
   parseLoomConnectConfig,
   type LoomConnectConfig,
@@ -28,6 +38,9 @@ const APP_PATH = "/Applications/Loom.app";
 const STATE_DIR = NodePath.join(NodeOS.homedir(), "Library/Application Support/Loom Updates");
 const BUILDS_DIR = NodePath.join(NodeOS.homedir(), "Library/Application Support/Loom Builds");
 const SOURCE_DIR = NodePath.join(STATE_DIR, "source");
+// Present once the Library hosts releases: builds then embed its feed and publications are mirrored.
+const RELEASE_MIRROR_CONFIG = NodePath.join(STATE_DIR, "release-mirror.json");
+const MIRRORED_DIR = NodePath.join(STATE_DIR, "mirrored");
 const PLIST_PATH = NodePath.join(NodeOS.homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
 const LOG_PATH = NodePath.join(NodeOS.homedir(), "Library/Logs/Loom Updates.log");
 const STAMPED_PACKAGES = ["apps/server", "apps/desktop", "apps/web", "packages/contracts"].map(
@@ -260,19 +273,33 @@ export function reservePublication(release: Release, sourceDir = SOURCE_DIR) {
 
 type Release = ReturnType<typeof releaseForTag>;
 
-export function validateFeedConfig(raw: string) {
+export function validateFeedConfig(raw: string, libraryFeedUrl?: string) {
   const entries = new Map(
     raw.split(/\r?\n/).flatMap((line) => {
-      const match = /^(provider|owner|repo):\s*([^\s]+)\s*$/.exec(line);
+      const match = /^(provider|owner|repo|url):\s*([^\s]+)\s*$/.exec(line);
       return match ? [[match[1], match[2]]] : [];
     }),
   );
+  if (libraryFeedUrl !== undefined) {
+    if (entries.get("provider") !== "generic" || entries.get("url") !== libraryFeedUrl)
+      throw new Error(`The built app must use the Library release feed ${libraryFeedUrl}.`);
+    return;
+  }
   if (
     entries.get("provider") !== "github" ||
     `${entries.get("owner")}/${entries.get("repo")}` !== REPOSITORY
   ) {
     throw new Error("The built app must use the kylebegeman/loom update feed.");
   }
+}
+
+/** The Library release feed new builds embed, or `undefined` while releases stay on GitHub. */
+function libraryFeedUrl() {
+  if (!NodeFS.existsSync(RELEASE_MIRROR_CONFIG)) return undefined;
+  if ((NodeFS.statSync(RELEASE_MIRROR_CONFIG).mode & 0o077) !== 0)
+    throw new Error(`${RELEASE_MIRROR_CONFIG} must be a private file (chmod 600).`);
+  return parseReleaseMirrorConfig(JSON.parse(NodeFS.readFileSync(RELEASE_MIRROR_CONFIG, "utf8")))
+    .feedUrl;
 }
 
 /** `undefined` when connect.json is missing, `null` when it says `"enabled": false`. */
@@ -326,6 +353,7 @@ export function buildEnvironment(
   connect?: LoomConnectConfig | null,
   connectRetired = false,
   node?: string,
+  desktopFeedUrl?: string,
 ) {
   const result = { ...env };
   delete result.ELECTRON_RUN_AS_NODE;
@@ -378,6 +406,7 @@ export function buildEnvironment(
     LANG: /utf-?8/i.test(result.LANG ?? "") ? result.LANG : "en_US.UTF-8",
     T3CODE_RELEASE_PUBLIC_CONFIG: "1",
     T3CODE_DESKTOP_UPDATE_REPOSITORY: REPOSITORY,
+    ...(desktopFeedUrl === undefined ? {} : { T3CODE_DESKTOP_UPDATE_FEED_URL: desktopFeedUrl }),
     T3CODE_DESKTOP_SIGNED: "false",
     COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
     GIT_TERMINAL_PROMPT: "0",
@@ -502,8 +531,16 @@ function run(
         connect.connectConfig,
         connect.connectRetired,
         node,
+        libraryFeedUrl(),
       )
-    : buildEnvironment(sourceDir, NodeProcess.env, publisherConnectConfig(), false, node);
+    : buildEnvironment(
+        sourceDir,
+        NodeProcess.env,
+        publisherConnectConfig(),
+        false,
+        node,
+        libraryFeedUrl(),
+      );
   const result = NodeChildProcess.spawnSync(command, args, {
     cwd: options.cwd,
     env,
@@ -820,7 +857,10 @@ async function prepare(release: Release) {
     const app = NodePath.join(unpacked, "Loom.app");
     if (apps[0] !== "Loom.app") await NodeFSP.rename(NodePath.join(unpacked, apps[0]!), app);
     const resources = NodePath.join(app, "Contents/Resources");
-    validateFeedConfig(await NodeFSP.readFile(NodePath.join(resources, "app-update.yml"), "utf8"));
+    validateFeedConfig(
+      await NodeFSP.readFile(NodePath.join(resources, "app-update.yml"), "utf8"),
+      libraryFeedUrl(),
+    );
     const buildRecord = `version=${release.version}\nintegration=${release.tag}\nupstream=${release.upstreamTag ?? ""}\ncommit=${release.commit}\nbuilt=${new Date().toISOString()}\n`;
     await NodeFSP.writeFile(NodePath.join(resources, "loom-build.env"), buildRecord);
     run("codesign", ["--force", "--deep", "--sign", SIGNING_IDENTITY, app], { stream: true });
@@ -1116,7 +1156,45 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
     { stream: true },
   );
   console.log(`Published https://github.com/${REPOSITORY}/releases/tag/${release.releaseTag}`);
+  await mirrorPublished(release.version);
   await prunePublishedBuilds(BUILDS_DIR, await installedRecordName());
+}
+
+/**
+ * Copies a published release into the Library's object store. A marker records completion, so a
+ * failed copy is retried by the next scheduled run. Older versions never move a channel feed back.
+ */
+async function mirrorPublished(version: string) {
+  const config = await readReleaseMirrorConfig(RELEASE_MIRROR_CONFIG);
+  if (config === null) return;
+  const marker = NodePath.join(MIRRORED_DIR, version);
+  if (await exists(marker)) return;
+  const channel = parsedVersion(version).nightly === null ? "latest" : "nightly";
+  const current = feedVersion(await readMirrored(config, `${channel}-mac.yml`));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-release-mirror-"));
+  try {
+    run("gh", ["release", "download", version, "--repo", REPOSITORY, "--dir", directory], {
+      stream: true,
+    });
+    await mirrorRelease({
+      config,
+      version,
+      channel,
+      directory,
+      writeFeed: current === null || compareVersions(version, current) >= 0,
+      log: (message) => console.log(message),
+    });
+    const releases = JSON.parse(
+      run("gh", ["api", `repos/${REPOSITORY}/releases?per_page=100`]),
+    ) as Array<IndexedRelease & { readonly draft: boolean }>;
+    await NodeFSP.mkdir(MIRRORED_DIR, { recursive: true });
+    const mirrored = new Set([...(await NodeFSP.readdir(MIRRORED_DIR)), version]);
+    await publishReleaseIndex(config, releaseIndex(releases, mirrored));
+    await NodeFSP.writeFile(marker, `${new Date().toISOString()}\n`);
+    console.log(`Mirrored ${version} to ${config.feedUrl}`);
+  } finally {
+    await NodeFSP.rm(directory, { recursive: true, force: true });
+  }
 }
 
 export function launchAgent(node: string, script: string, logPath: string) {
@@ -1166,6 +1244,17 @@ async function enable() {
     await NodeFSP.copyFile(
       NodeURL.fileURLToPath(new URL("../lib/update-manifest.ts", import.meta.url)),
       NodePath.join(tools, "lib/update-manifest.ts"),
+    );
+    await NodeFSP.copyFile(
+      NodeURL.fileURLToPath(new URL("./release-mirror.ts", import.meta.url)),
+      NodePath.join(tools, "fork/release-mirror.ts"),
+    );
+    // release-mirror.ts signs with the Library's own signer, at the same relative path.
+    const signer = "apps/server/src/fork/project-library/assets/b2Signing.ts";
+    await NodeFSP.mkdir(NodePath.join(tools, "..", NodePath.dirname(signer)), { recursive: true });
+    await NodeFSP.copyFile(
+      NodeURL.fileURLToPath(new URL(`../../${signer}`, import.meta.url)),
+      NodePath.join(tools, "..", signer),
     );
   }
   await NodeFSP.mkdir(NodePath.dirname(PLIST_PATH), { recursive: true });
@@ -1461,6 +1550,7 @@ async function publishIos(release: Release) {
 
 const UPDATE_USAGE = `Usage: node scripts/fork/updates.ts <check|prepare|publish> [--wait] [--expect-tag <loom-v...> --expect-sha <40-character lowercase SHA> --expect-version <version>]
        node scripts/fork/updates.ts next-version [upstream v* tag]
+       node scripts/fork/updates.ts mirror <published version>
        node scripts/fork/updates.ts <enable|disable|status>
 All three --expect-* flags must be supplied together, using separate flag and value arguments.`;
 
@@ -1482,6 +1572,12 @@ export function parseUpdateArgs(command: string | undefined, args: readonly stri
     )
       fail("next-version accepts at most one exact upstream v* tag.");
     return { command, upstreamTag } as const;
+  }
+  if (command === "mirror") {
+    const version = args[0];
+    if (args.length !== 1 || version === undefined || !LOOM_VERSION.test(version))
+      fail("mirror requires one exact published Loom version.");
+    return { command, version } as const;
   }
   if (command === "enable" || command === "disable" || command === "status") {
     if (args.length) fail(`${command} does not accept arguments.`);
@@ -1561,6 +1657,7 @@ export async function main(
   if (NodeProcess.platform !== "darwin" || NodeProcess.arch !== "arm64")
     throw new Error("The local Loom publisher requires an Apple Silicon Mac.");
   if (options.command === "enable") return enable();
+  if (options.command === "mirror") return withLock(() => mirrorPublished(options.version), true);
   if (options.command === "disable") {
     if (await exists(PLIST_PATH)) {
       run("launchctl", ["bootout", `gui/${NodeProcess.getuid!()}`, PLIST_PATH]);
@@ -1585,6 +1682,7 @@ export async function main(
     if (options.command === "check") return;
     await logging.withBuildLog(NodePath.join(BUILDS_DIR, release.recordName), async () => {
       if (options.command === "publish" && state === "published") {
+        await mirrorPublished(release.version);
         await publishIos(release);
         return;
       }
