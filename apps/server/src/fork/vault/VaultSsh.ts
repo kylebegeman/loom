@@ -209,6 +209,7 @@ const make = Effect.gen(function* () {
       yield* workloads.revalidate(session);
       const metadata: VaultSshAgentSession = {
         sessionId: session.id,
+        label: record.item.label,
         id: input.id,
         version: input.expectedVersion,
         expiresAt: session.expiresAt,
@@ -307,7 +308,12 @@ const make = Effect.gen(function* () {
       });
       const result = yield* run({ ...record.key, command: input.command, authorize });
       yield* authorize;
-      return { sessionId: session.id, requestId: input.proof.challenge.requestId, ...result };
+      return {
+        sessionId: session.id,
+        label: record.item.label,
+        requestId: input.proof.challenge.requestId,
+        ...result,
+      };
     }),
     verifyGit: Effect.fn("VaultSsh.verifyGit")(function* (input, authorize) {
       if (!isGitProbe(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
@@ -510,7 +516,12 @@ const make = Effect.gen(function* () {
         command: input.command,
         authorize,
       });
-      return { sessionId: session.id, requestId: input.proof.challenge.requestId, ...result };
+      return {
+        sessionId: session.id,
+        label: record.item.label,
+        requestId: input.proof.challenge.requestId,
+        ...result,
+      };
     }),
   });
 });

@@ -16,7 +16,7 @@ export const renderAgentSshLauncher = (
     target.hostname,
     `${target.username}@${target.hostname}`,
     `ssh://${target.username}@${target.hostname}:${target.port}`,
-    ...aliases.flatMap((alias) =>
+    ...[...aliases, ...(session.label ? [session.label] : [])].flatMap((alias) =>
       HOST_ALIAS.test(alias) ? [alias, `${target.username}@${alias}`] : [],
     ),
   ]);
@@ -51,7 +51,7 @@ export const renderAgentSshLauncher = (
     "SendEnv=GIT_PROTOCOL",
   ];
   return `#!/bin/sh
-fail() { printf '%s\\n' 'Loom Vault refused an unsupported SSH option or a different destination.' >&2; exit 64; }
+fail() { printf '%s\\n' ${quote(`Loom Vault expected ${target.username}@${target.hostname}:${target.port}. Use that destination or the selected connection label; only -T, -v, -p, -l and -o SendEnv=GIT_PROTOCOL are supported.`)} >&2; exit 64; }
 verbosity=
 while [ "$#" -gt 0 ]; do
   case "$1" in

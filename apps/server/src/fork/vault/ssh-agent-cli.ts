@@ -1,4 +1,4 @@
-import { VaultSshAgentRunInput } from "@t3tools/contracts/fork";
+import { decodeSshAgentInput } from "./ssh-agent-input.ts";
 import { Argument, Command } from "effect/cli";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -19,7 +19,7 @@ class SshChildExit extends Schema.TaggedError<SshChildExit>()("SshChildExit", {
   }
 }
 const runtime = SshAgentTerminal.layer.pipe(Layer.provide(SshAgentClient.layer));
-const decode = Schema.decodeEffect(Schema.fromJsonString(VaultSshAgentRunInput));
+
 export const sshAgentExecCommand = Command.make("ssh-agent-exec", {
   input: Argument.String("arguments-json"),
 }).pipe(
@@ -28,11 +28,7 @@ export const sshAgentExecCommand = Command.make("ssh-agent-exec", {
   ),
   Command.withHandler(({ input }) =>
     Effect.gen(function* () {
-      const request = yield* decode(input).pipe(
-        Effect.mapError(
-          () => new SshAgentTerminal.SshAgentTerminalError({ reason: "configuration" }),
-        ),
-      );
+      const request = yield* decodeSshAgentInput(input);
       const terminal = yield* SshAgentTerminal.SshAgentTerminal;
       const code = yield* terminal.execute(request);
       if (code !== 0) return yield* new SshChildExit({ code: Math.min(255, Math.max(1, code)) });

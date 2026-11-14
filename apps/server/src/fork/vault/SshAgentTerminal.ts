@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as SshAgentClient from "./SshAgentClient.ts";
+import { validateSshAgentInput } from "./ssh-agent-input.ts";
 import { renderAgentSshLauncher } from "./ssh-agent-launcher.ts";
 
 export class SshAgentTerminalError extends Schema.TaggedError<SshAgentTerminalError>()(
@@ -35,6 +36,7 @@ export class SshAgentTerminalError extends Schema.TaggedError<SshAgentTerminalEr
   }
 }
 type Failure =
+  | import("./ssh-agent-input.ts").SshAgentInputError
   | SshAgentTerminalError
   | Effect.Error<ReturnType<SshAgentClient.SshAgentClient["Service"]["open"]>>;
 export class SshAgentTerminal extends Context.Service<
@@ -43,7 +45,6 @@ export class SshAgentTerminal extends Context.Service<
     readonly execute: (input: VaultSshAgentRunInput) => Effect.Effect<number, Failure>;
   }
 >()("t3/fork/vault/SshAgentTerminal") {}
-const isRun = Schema.is(VaultSshAgentRunInput);
 const failed = () => new SshAgentTerminalError({ reason: "failed" });
 // Bounds how long a child may leave its agent connection silent. Each frame waits on the Loom
 // server's live Vault authorization, and on other sockets' frames ahead of it, so the timer is
@@ -58,7 +59,7 @@ const make = Effect.gen(function* () {
   const execute = Effect.fn("SshAgentTerminal.execute")(function* (input: VaultSshAgentRunInput) {
     if (platform !== "darwin" && platform !== "linux")
       return yield* new SshAgentTerminalError({ reason: "unsupported" });
-    if (!isRun(input)) return yield* new SshAgentTerminalError({ reason: "configuration" });
+    yield* validateSshAgentInput(input);
     return yield* Effect.gen(function* () {
       const selection =
         "connection" in input
@@ -68,15 +69,12 @@ const make = Effect.gen(function* () {
       const session = yield* Effect.acquireRelease(client.open(selection), (s) =>
         client.close(s.sessionId).pipe(Effect.ignore),
       );
-      const lifetime = Math.min(
-        input.timeoutMs,
-        session.expiresAt - (yield* Clock.currentTimeMillis),
-      );
+      const signingLifetime = session.expiresAt - (yield* Clock.currentTimeMillis);
       if (
         ("id" in pin && (session.id !== pin.id || session.version !== pin.expectedVersion)) ||
         !session.target.hostKey ||
-        lifetime <= 0 ||
-        lifetime > 300_000
+        signingLifetime <= 0 ||
+        signingLifetime > 300_000
       )
         return yield* new SshAgentTerminalError({ reason: "configuration" });
       const directory = yield* Effect.acquireRelease(
@@ -292,7 +290,7 @@ const make = Effect.gen(function* () {
         );
       });
       return yield* Effect.raceFirst(run, Deferred.await(denied)).pipe(
-        Effect.timeout(lifetime),
+        Effect.timeout(input.timeoutMs),
         Effect.catchTags({
           TimeoutError: () => Effect.fail(new SshAgentTerminalError({ reason: "timeout" })),
         }),
