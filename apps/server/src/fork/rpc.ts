@@ -407,6 +407,9 @@ export const makeForkRpcLayer = (
             auth.effect(ENROLL.lookupJoin, join.lookup(input.code, session)),
           [ENROLL.decideJoin]: (input) =>
             auth.effect(ENROLL.decideJoin, join.decide(input, session)),
+          [ENROLL.joinPrompts]: () => auth.stream(ENROLL.joinPrompts, join.prompts(session)),
+          [ENROLL.respondJoin]: (input) =>
+            auth.effect(ENROLL.respondJoin, join.respond(input, session)),
           [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
           [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
           [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),

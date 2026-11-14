@@ -393,6 +393,26 @@ export function directoryCatalogRows<Saved extends DirectorySavedConnection>(inp
 }
 
 /**
+ * The rows a Library list adds beside this device's own computer list, so each computer shows
+ * once. A saved computer stays only while the Library can reconnect it, or once it is old enough
+ * to forget.
+ */
+export function libraryListRows<Saved extends DirectorySavedConnection>(
+  rows: readonly DirectoryCatalogRow<Saved>[],
+  input: {
+    readonly libraryEnvironmentId: EnvironmentId | null;
+    readonly oldIds: ReadonlySet<EnvironmentId>;
+  },
+): readonly DirectoryCatalogRow<Saved>[] {
+  return rows.filter(
+    (row) =>
+      row.report !== null &&
+      row.environmentId !== input.libraryEnvironmentId &&
+      (row.saved === null || row.action !== null || input.oldIds.has(row.environmentId)),
+  );
+}
+
+/**
  * Machines whose reporting computer the listing no longer has, for example after that computer
  * was forgotten. They attach to no row, so a client lists them on their own to forget them.
  */

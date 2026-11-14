@@ -166,6 +166,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [ENROLL.stepJoin]: AuthSettingsWriteScope,
   [ENROLL.lookupJoin]: AuthSettingsWriteScope,
   [ENROLL.decideJoin]: AuthSettingsWriteScope,
+  [ENROLL.respondJoin]: AuthSettingsWriteScope,
   [ENROLL.removeComputer]: AuthSettingsWriteScope,
   [LIB.installManagementDelegation]: AuthSettingsWriteScope,
   [LIB.createProject]: AuthSettingsWriteScope,

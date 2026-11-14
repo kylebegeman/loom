@@ -103,6 +103,7 @@ it.effect.each([
   "enrollComputer",
   "lookupJoin",
   "decideJoin",
+  "respondJoin",
   "issueManagementDelegation",
   "runOperation",
   "executeOperation",
@@ -123,6 +124,7 @@ it.effect.each([
         method === "enrollComputer" ||
         method === "lookupJoin" ||
         method === "decideJoin" ||
+        method === "respondJoin" ||
         method === "issueManagementDelegation"
           ? AuthSettingsWriteScope
           : AuthTerminalOperateScope;

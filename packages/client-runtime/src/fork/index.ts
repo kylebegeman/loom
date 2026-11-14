@@ -76,7 +76,11 @@ export * from "./library-project-list.ts";
 export * from "./library-conversation-list.ts";
 export * from "./library-resources.ts";
 export * from "./library-selection.ts";
-export { accountComputerEnrollmentReady } from "./account-computers.ts";
+export {
+  accountComputerEnrollmentReady,
+  ownComputerEnrollment,
+  type OwnComputerEnrollment,
+} from "./account-computers.ts";
 export * from "./library-archive.ts";
 export * from "./library-project-profile.ts";
 export * from "./library-brief-diff.ts";

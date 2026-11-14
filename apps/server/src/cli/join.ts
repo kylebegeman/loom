@@ -1,9 +1,11 @@
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import {
   ACCOUNT_JOIN_START,
+  ACCOUNT_JOIN_STATUS,
   ACCOUNT_JOIN_STEP,
   ComputerJoinPrompt,
   ComputerJoinProgress,
+  ComputerJoinReadiness,
   LibraryError,
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
@@ -23,6 +25,9 @@ import { authLocationFlags, resolveCliAuthConfig } from "./config.ts";
 
 const decodePrompt = Schema.decodeUnknownEffect(ComputerJoinPrompt);
 const decodeProgress = Schema.decodeUnknownEffect(ComputerJoinProgress);
+const decodeReadiness = Schema.decodeUnknownOption(ComputerJoinReadiness);
+// Long enough for a first Loomhost route; setup keeps going in the background after it.
+const READY_WAIT_MS = 3 * 60_000;
 const isLibraryError = Schema.is(LibraryError);
 const decodeError = Schema.decodeUnknownOption(
   Schema.Struct({ message: Schema.String.check(Schema.isMaxLength(2048)) }),
@@ -43,7 +48,7 @@ const join = Effect.fn("cli.joinComputer")(function* (input: {
     return yield* new LibraryError({
       reason: "blocked",
       detail:
-        "Loom is not running on this computer. Start its server, then run this join command again.",
+        "Loom is not running on this computer. Run `loom service install` to keep it running in the background, then run this join command again.",
     });
   const origin = yield* Effect.try({
     try: () => {
@@ -93,7 +98,18 @@ const join = Effect.fn("cli.joinComputer")(function* (input: {
   );
   if (progress === "pending")
     yield* Console.log(
-      `On a signed-in phone or computer, open Account > Add computer and enter:\n\n  ${prompt.review.code}\n\nApprove only if the code and computer name match this terminal.\nComputer: ${prompt.review.label}\nAccount: ${prompt.libraryUrl}\nWaiting for approval. Ctrl+C stops waiting; the same command resumes this request.`,
+      [
+        "Your signed-in phones and computers now show a request to add this computer.",
+        "Approve it there by tapping this code:",
+        "",
+        `  ${prompt.review.code}`,
+        "",
+        `Computer: ${prompt.review.label}`,
+        `Key: ${prompt.review.keyFingerprint}`,
+        `Account: ${prompt.libraryUrl}`,
+        "No request showing? Open Account in Loom on a signed-in device and enter the code.",
+        "Waiting for approval. Ctrl+C stops waiting; the same command resumes this request.",
+      ].join("\n"),
     );
   while (progress === "pending") {
     if ((yield* Clock.currentTimeMillis) >= prompt.review.expiresAt)
@@ -112,7 +128,52 @@ const join = Effect.fn("cli.joinComputer")(function* (input: {
       reason: "blocked",
       detail: "This computer was not approved. Run join with --restart to request a new code.",
     });
-  yield* Console.log("Computer added to your account. Remote access starts automatically.");
+  yield* Console.log("Approved. Finishing setup on this computer...");
+  const readiness = Effect.fn("cli.joinReadiness")(function* () {
+    const response = yield* http
+      .execute(
+        HttpClientRequest.post(`${origin}${ACCOUNT_JOIN_STATUS}`).pipe(
+          HttpClientRequest.setHeader("authorization", `Bearer ${issued.token}`),
+          HttpClientRequest.bodyJsonUnsafe({}),
+        ),
+      )
+      .pipe(Effect.timeout("30 seconds"));
+    // A server from before readiness reports finishes setup without one.
+    if (response.status === 404) return null;
+    const body = yield* response.json;
+    return response.status === 200 ? Option.getOrNull(decodeReadiness(body)) : null;
+  }, Effect.mapError(failed));
+  const until = (yield* Clock.currentTimeMillis) + READY_WAIT_MS;
+  let waitingFor: string | null | undefined;
+  let status = yield* readiness();
+  while (status !== null && status.waitingFor !== null) {
+    if (status.waitingFor !== waitingFor) yield* Console.log(`Waiting for ${status.waitingFor}...`);
+    waitingFor = status.waitingFor;
+    if ((yield* Clock.currentTimeMillis) >= until) {
+      yield* Console.log(
+        `This computer is in your account, and Loom is still finishing ${status.waitingFor}. It keeps trying in the background. Run this command again to check.`,
+      );
+      return;
+    }
+    yield* Effect.sleep("3 seconds");
+    status = yield* readiness();
+  }
+  if (status === null) {
+    yield* Console.log("Computer added to your account. Remote access starts automatically.");
+    return;
+  }
+  yield* Console.log(
+    [
+      "This computer is ready.",
+      `History: publishing to ${prompt.libraryUrl}`,
+      ...(status.remoteNote !== null
+        ? [`Remote access: ${status.remoteNote}`]
+        : status.url === null
+          ? []
+          : [`Remote access: ${status.url}`]),
+      "It now appears on every device signed in to your account.",
+    ].join("\n"),
+  );
 });
 
 export const joinCommand = Command.make("join", {
@@ -134,6 +195,16 @@ export const joinCommand = Command.make("join", {
       const config = yield* resolveCliAuthConfig(flags, logLevel);
       return yield* join(flags).pipe(
         Effect.scoped,
+        // Expected outcomes, such as a declined request, print one line instead of a stack trace.
+        Effect.catchIf(isLibraryError, (error) =>
+          Console.error(error.message).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                process.exitCode = 1;
+              }),
+            ),
+          ),
+        ),
         Effect.provide(
           Layer.mergeAll(
             EnvironmentAuth.layerRuntime.pipe(

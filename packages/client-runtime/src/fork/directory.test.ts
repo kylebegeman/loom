@@ -16,6 +16,7 @@ import {
   directoryUnattachedMachines,
   directoryOldMachines,
   identityDirectoryAddresses,
+  libraryListRows,
 } from "./directory.ts";
 import {
   APP_ORIGIN,
@@ -185,14 +186,23 @@ describe("directoryCatalogRows", () => {
     expect(row && directoryConnectPlan(row, identity(STUDIO), native)?.signIn).toBe(
       "loom-identity",
     );
-    const [connected] = directoryCatalogRows({
+    const connectedRows = directoryCatalogRows({
       listing: current,
       saved: [savedStudio],
       connected: [STUDIO],
       reconnectable: [STUDIO],
       now: NOW,
     });
-    expect(connected).toMatchObject({ action: null, routes: [] });
+    expect(connectedRows[0]).toMatchObject({ action: null, routes: [] });
+    // A Library list adds only what the device list cannot: a reconnect, or an old entry to forget.
+    const none = new Set<typeof STUDIO>();
+    expect(libraryListRows([row!], { libraryEnvironmentId: LIBRARY, oldIds: none })).toEqual([row]);
+    expect(libraryListRows(connectedRows, { libraryEnvironmentId: LIBRARY, oldIds: none })).toEqual(
+      [],
+    );
+    expect(
+      libraryListRows(connectedRows, { libraryEnvironmentId: LIBRARY, oldIds: new Set([STUDIO]) }),
+    ).toEqual(connectedRows);
   });
 
   it("lists saved connections first in their order, then discovered computers by label", () => {

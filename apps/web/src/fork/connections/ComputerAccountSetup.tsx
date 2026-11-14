@@ -1,172 +1,92 @@
-import { randomUUID } from "~/lib/utils";
-import * as Option from "effect/Option";
-import { AsyncResult } from "effect/reactivity";
-import { reach } from "../reach/state";
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import {
-  squashLibraryCommandFailure,
-  supportsLoomFeature,
-  directoryReportingView,
-  accountComputerEnrollmentReady,
-} from "@t3tools/client-runtime/fork";
-import { AuthSettingsWriteScope } from "@t3tools/contracts";
-import { LibraryError, ACCOUNT_ENROLLMENT_FEATURE } from "@t3tools/contracts/fork";
-import { useState } from "react";
-import * as Schema from "effect/Schema";
 import type { EnvironmentPresentation } from "~/state/environments";
-import { useEnvironmentScope } from "~/state/session";
-import { useEnvironmentQuery } from "~/state/query";
-import { useAtomCommand } from "~/state/use-atom-command";
-import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { Button } from "~/components/ui/button";
-import { projectLibrary, useLibraryAuthority } from "../project-library/state";
-import { directoryReporting } from "../directory-computers/state";
-
-const isLibraryError = Schema.is(LibraryError);
-const RequestId = Schema.NullOr(Schema.String);
+import { accountSetupApplies, useComputerEnrollment } from "./accountEnrollment";
 
 export function ComputerAccountSetup({
   environment,
 }: {
   readonly environment: EnvironmentPresentation;
 }) {
-  const supported = supportsLoomFeature(
-    environment.serverConfig?.environment.capabilities,
-    ACCOUNT_ENROLLMENT_FEATURE,
-  );
-  if (
-    !supported ||
-    environment.serverConfig?.environment.capabilities.libraryAuthority === true ||
-    environment.serverConfig?.environment.capabilities.supportsExecution === false
-  )
-    return null;
+  if (!accountSetupApplies(environment)) return null;
   return <ComputerAccountSetupForm key={environment.environmentId} environment={environment} />;
 }
+
+const WAITING_TEXT = {
+  "signed-out": "Sign in to Loom on this device to add this computer to your account.",
+  reconnect: "Reconnect this computer to add it to your account.",
+  permission: "Adding a computer needs full settings access on it and on your Library.",
+  checking: "Checking your account...",
+} as const;
 
 function ComputerAccountSetupForm({
   environment,
 }: {
   readonly environment: EnvironmentPresentation;
 }) {
-  const authority = useLibraryAuthority();
-  const connected = environment.connection.phase === "connected";
-  const source = useEnvironmentQuery(
-    connected ? projectLibrary.info({ environmentId: environment.environmentId, input: {} }) : null,
-  );
-  const computers = useEnvironmentQuery(
-    authority.connected && authority.authorityId
-      ? projectLibrary.accountComputers({ environmentId: authority.authorityId, input: {} })
-      : null,
-  );
-  const canInstall = useAtomValue(
-    projectLibrary.enrollComputer.permissionAtom(environment.environmentId),
-  );
-  const canApprove = useEnvironmentScope(authority.authorityId, AuthSettingsWriteScope);
-  const enroll = useAtomCommand(projectLibrary.enrollComputer, { reportFailure: false });
-  const reportAtom = directoryReporting(connected ? environment.environmentId : null);
-  const refreshReport = useAtomRefresh(reportAtom);
-  const report = directoryReportingView(useAtomValue(reportAtom), connected).report;
-  const route = useAtomValue(reach.status(connected ? environment.environmentId : null));
-  const key = `loom:account-enrollment:v1:${environment.environmentId}:${authority.authorityId}`;
-  const [savedRequestId, saveRequestId] = useLocalStorage(key, null, RequestId);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [finishedFor, setFinishedFor] = useState<string | null>(null);
-  const finished = finishedFor === key;
-  const available = connected && authority.connected && canInstall && canApprove;
-  const signedIn = report?.signIn?.state === "ready" || report?.signIn?.state === "expiring";
-  const ready = accountComputerEnrollmentReady({
-    libraryEnvironmentId: authority.authorityId,
-    sourceLibraryEnvironmentId: source.data?.destination?.environmentId ?? null,
-    membership: computers.isSuccess
-      ? (computers.data?.find((computer) => computer.environmentId === environment.environmentId) ??
-        null)
-      : null,
-    signedIn,
-    remoteEnabled: Option.exists(AsyncResult.value(route), (status) => status.enabled),
-  });
-  const start = async () => {
-    if (busy || !available || !authority.authorityId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const requestId = savedRequestId ?? randomUUID();
-      saveRequestId(requestId);
-      if (getLocalStorageItem(key, RequestId) !== requestId) {
-        setError("Loom could not save this setup request. Allow site storage and try again.");
-      } else {
-        const result = await enroll({
-          environmentId: environment.environmentId,
-          input: { authorityEnvironmentId: authority.authorityId, requestId },
-        });
-        if (result._tag === "Failure") {
-          const cause = squashLibraryCommandFailure(result);
-          if (isLibraryError(cause) && cause.reason === "request-conflict") saveRequestId(null);
-          setError(
-            cause instanceof Error ? cause.message : "Setup could not finish. Resume to continue.",
-          );
-        } else {
-          saveRequestId(null);
-          setFinishedFor(key);
-          refreshReport();
-          source.refresh();
-          computers.refresh();
-        }
-      }
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Setup could not finish. Resume to continue.",
-      );
-    }
-    setBusy(false);
-  };
+  const { plan, ready, run, resuming, accountError, checkAccountAgain, start } =
+    useComputerEnrollment(environment);
+  // This device's own computer joins on its own once signed in; others join with a click.
+  const automatic = environment.entry.target._tag === "PrimaryConnectionTarget";
+  const label = environment.label;
+  const running = run?.phase === "running";
+  const enrolled = plan.kind === "enrolled";
+  const heading = ready
+    ? `${label} is ready for your other devices`
+    : enrolled
+      ? `${label} is in your account`
+      : plan.kind === "removed"
+        ? `${label} was removed from your account`
+        : `Add ${label} to your account`;
+  const body = ready
+    ? "Open this computer’s conversations from your phone, browser and other Macs."
+    : enrolled
+      ? "Remote access is off for this computer, so your other devices reach it only on networks where they can reach it directly."
+      : plan.kind === "removed"
+        ? "Loom does not add a removed computer back on its own. Add it again to open its conversations from your other devices."
+        : plan.kind === "other-library"
+          ? "This computer publishes its history to a different Library, so it cannot join this account."
+          : automatic
+            ? "Loom adds this computer to your account automatically after you sign in, so your other devices can open its conversations."
+            : "Approve this computer once to open its conversations from your other devices.";
+  const offered = plan.kind === "enroll" || plan.kind === "removed";
   return (
     <section aria-label="Account access" className="space-y-3 border-t border-border/60 pt-4">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold">
-          {ready
-            ? `${environment.label} is ready for your other devices`
-            : `Add ${environment.label} to your account`}
-        </h3>
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          {ready
-            ? "Open this computer’s conversations from your phone, browser and other Macs."
-            : "Approve this computer once to open its conversations from your other devices."}
-        </p>
+        <h3 className="text-sm font-semibold">{heading}</h3>
+        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{body}</p>
       </div>
-      {!ready || savedRequestId ? (
-        <Button
-          size="sm"
-          variant="default"
-          disabled={!available || busy || !computers.isSuccess || computers.isPending}
-          onClick={() => void start()}
-        >
-          {busy ? "Adding computer..." : savedRequestId ? "Resume setup" : "Add computer"}
+      {offered || running ? (
+        <Button size="sm" variant="default" disabled={running} onClick={() => void start()}>
+          {running
+            ? "Adding computer..."
+            : plan.kind === "removed"
+              ? "Add again"
+              : resuming || run?.phase === "failed"
+                ? "Resume setup"
+                : "Add computer"}
         </Button>
       ) : null}
-      {authority.connected && !available ? (
+      {plan.kind === "waiting" ? (
         <p role="status" className="text-xs text-muted-foreground">
-          {!connected
-            ? "Reconnect this computer to finish setup."
-            : "Full settings access is needed on this computer and your Library."}
+          {WAITING_TEXT[plan.reason]}
         </p>
       ) : null}
-      {finished ? (
+      {run?.phase === "done" ? (
         <p role="status" className="text-xs text-muted-foreground">
           Computer added. Remote access starts automatically.
         </p>
       ) : null}
-      {computers.error ? (
+      {accountError ? (
         <p role="alert" className="text-sm text-destructive">
-          {computers.error}
-          <Button size="sm" variant="outline" onClick={computers.refresh}>
+          {accountError}
+          <Button size="sm" variant="outline" onClick={checkAccountAgain}>
             Check account setup again
           </Button>
         </p>
       ) : null}
-      {error ? (
+      {run?.phase === "failed" ? (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {run.error}
         </p>
       ) : null}
     </section>

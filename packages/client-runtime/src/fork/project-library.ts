@@ -205,6 +205,14 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:account:approve-computer",
       tag: ENROLL.decideJoin,
     }),
+    joinPrompts: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:account:join-prompts",
+      tag: ENROLL.joinPrompts,
+    }),
+    respondJoin: createEnvironmentRpcCommand(runtime, {
+      label: "loom:account:answer-computer",
+      tag: ENROLL.respondJoin,
+    }),
     enrollComputer: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:enroll-computer",
       tag: L.managementStatus,

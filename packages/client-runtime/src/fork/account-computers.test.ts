@@ -16,7 +16,11 @@ import {
   type NetworkStatus,
 } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { accountComputerEnrollmentReady, syncAccountComputers } from "./account-computers.ts";
+import {
+  accountComputerEnrollmentReady,
+  ownComputerEnrollment,
+  syncAccountComputers,
+} from "./account-computers.ts";
 import { BOOK, DESK, LIBRARY, STUDIO, listing, reported } from "./directory-test-fixtures.ts";
 
 const source = (identity = true): ConnectionCatalogEntry => ({
@@ -69,6 +73,56 @@ it("requires approved account membership beyond existing publishing and remote a
   ])
     expect(accountComputerEnrollmentReady({ ...input, ...change })).toBe(false);
 });
+it("enrolls its own computer without a click, except after removal or for another Library", () => {
+  const membership: AccountComputerStatus = {
+    environmentId: BOOK,
+    label: "Book",
+    membershipRevision: 1,
+    state: "active",
+    publishingEnded: false,
+    routeRemoved: false,
+    directoryRemoved: false,
+    detail: null,
+  };
+  const input = {
+    libraryEnvironmentId: LIBRARY,
+    libraryConnected: true,
+    computerConnected: true,
+    permitted: true,
+    sourceLibraryEnvironmentId: LIBRARY,
+    membership,
+    signedIn: true,
+  };
+  expect(ownComputerEnrollment(input)).toEqual({ kind: "enrolled" });
+  expect(
+    [
+      { membership: null, sourceLibraryEnvironmentId: null },
+      { membership: { ...membership, membershipRevision: null } },
+      { signedIn: false },
+    ].map((change) => ownComputerEnrollment({ ...input, ...change }).kind),
+  ).toEqual(["enroll", "enroll", "enroll"]);
+  expect(
+    [
+      { membership: { ...membership, state: "removed" as const } },
+      { membership: { ...membership, state: "removing" as const } },
+      { sourceLibraryEnvironmentId: DESK },
+      { libraryConnected: false },
+      { computerConnected: false },
+      { permitted: false },
+      { membership: undefined },
+      { sourceLibraryEnvironmentId: undefined },
+    ].map((change) => ownComputerEnrollment({ ...input, ...change })),
+  ).toEqual([
+    { kind: "removed" },
+    { kind: "removed" },
+    { kind: "other-library" },
+    { kind: "waiting", reason: "signed-out" },
+    { kind: "waiting", reason: "reconnect" },
+    { kind: "waiting", reason: "permission" },
+    { kind: "waiting", reason: "checking" },
+    { kind: "waiting", reason: "checking" },
+  ]);
+});
 const fixture = Effect.gen(function* () {
   const entries = yield* SubscriptionRef.make<ReadonlyMap<typeof LIBRARY, ConnectionCatalogEntry>>(
     new Map([[LIBRARY, source()]]),
@@ -88,11 +142,12 @@ const fixture = Effect.gen(function* () {
           }),
         );
       writes.push(registration);
+      // Like the registry, a new route keeps the saved on/off choice.
       return SubscriptionRef.update(entries, (current) =>
-        new Map(current).set(
-          registration.target.environmentId,
-          connectionRegistrationCatalogEntry(registration),
-        ),
+        new Map(current).set(registration.target.environmentId, {
+          ...connectionRegistrationCatalogEntry(registration),
+          enabled: current.get(registration.target.environmentId)?.enabled ?? true,
+        }),
       ).pipe(Effect.as(true));
     },
   });
@@ -109,7 +164,7 @@ const fixture = Effect.gen(function* () {
 });
 
 it.effect(
-  "discovers account routes for new and saved computers while preserving disabled connections",
+  "discovers account routes for new, saved and switched-off computers without switching any on",
   () =>
     Effect.gen(function* () {
       const f = yield* fixture;
@@ -157,14 +212,14 @@ it.effect(
       );
       yield* f.sync(updated);
       yield* f.sync(updated);
-      expect(f.writes).toHaveLength(2);
+      expect(f.writes.map((write) => write.target.environmentId)).toEqual([BOOK, DESK, STUDIO]);
       expect(f.writes[0]).toMatchObject({
         _tag: "AccountConnectionRegistration",
         target: { environmentId: BOOK },
         profile: { account: { libraryEnvironmentId: LIBRARY, connectionId: "library-login" } },
       });
       expect(f.writes[0]).not.toHaveProperty("credential");
-      expect(f.writes[1]).toMatchObject({
+      expect(f.writes[2]).toMatchObject({
         _tag: "AccountConnectionRegistration",
         target: { environmentId: STUDIO },
         profile: {
@@ -172,7 +227,7 @@ it.effect(
           account: { libraryEnvironmentId: LIBRARY, connectionId: "library-login" },
         },
       });
-      expect((yield* SubscriptionRef.get(f.entries)).get(DESK)).toEqual(disabled);
+      expect((yield* SubscriptionRef.get(f.entries)).get(DESK)?.enabled).toBe(false);
     }),
 );
 

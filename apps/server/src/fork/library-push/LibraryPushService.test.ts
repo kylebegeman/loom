@@ -855,6 +855,35 @@ describe("LibraryPushService agent alerts", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("asks only the owner's phones to approve a joining computer, ten an hour", () =>
+    Effect.gen(function* () {
+      // Agent alerts stay off: a join prompt answers the owner's own command.
+      const { env, push, apns } = yield* ready({ LOOM_LIBRARY_PUSH_RECIPIENTS: "alice" });
+      yield* push.register(identity(env, "alice"), registration({ allowedKinds: [] }));
+      yield* push.register(identity(env, "bob"), registration({ token: BOB_TOKEN }));
+      const prompt = (requestId: string) =>
+        push.joinPrompt({ libraryEnvironmentId: STUDIO, requestId, expiresAt: NOW + 15 * 60_000 });
+      yield* prompt("request-1");
+      expect(apns.sent.map((send) => send.deviceId)).toEqual([rowId("alice")]);
+      expect(apns.sent[0]?.request).toMatchObject({
+        expiresInSeconds: 900,
+        payload: {
+          aps: { alert: { title: "Loom" } },
+          body: {
+            environmentId: STUDIO,
+            requestId: "request-1",
+            deepLink: "/library/join/request-1",
+          },
+        },
+      });
+      for (let count = 2; count <= 11; count++) yield* prompt(`request-${count}`);
+      expect(apns.sent).toHaveLength(10);
+      yield* TestClock.adjust("1 hour");
+      yield* prompt("request-12");
+      expect(apns.sent).toHaveLength(11);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("drops a device whose token Apple reports dead", () =>
     Effect.gen(function* () {
       const { env, push, secrets, apns } = yield* ready(ALERTS_FOR_ALICE);

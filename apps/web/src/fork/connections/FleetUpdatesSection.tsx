@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import {
   directoryServerVersion,
   libraryProjectColor,
@@ -24,7 +25,7 @@ import { useUpdateEverythingRun } from "~/components/sidebar/updateEverythingRun
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
 import { useDesktopUpdateState } from "~/state/desktopUpdate";
-import { useEnvironmentProviders } from "~/state/environments";
+import { useEnvironmentProviders, useEnvironments } from "~/state/environments";
 import { directoryComputers } from "../directory-computers/state";
 import { LibraryEmpty, LibraryStateDot } from "../project-library/LibraryControls";
 import { ComputerTile, projectColorStyle } from "../project-library/ProjectIdentity";
@@ -54,6 +55,8 @@ export function FleetUpdatesSection() {
       : null;
   const updates = useUpdateEverything(localVersion, "fleet");
   const providersByEnvironment = useEnvironmentProviders();
+  const { environments } = useEnvironments();
+  const environmentsById = new Map(environments.map((entry) => [entry.environmentId, entry]));
   const activeRun = useUpdateEverythingRun();
   const run = activeRun?.scope !== "local" ? activeRun : null;
   const [confirming, setConfirming] = useState(false);
@@ -136,9 +139,14 @@ export function FleetUpdatesSection() {
                 const blockedReason = updates.skipped.find(
                   (entry) => entry.environmentId === machine.environmentId,
                 )?.reason;
-                const currentVersion =
-                  machine.serverConfig?.environment.serverVersion ??
-                  directoryServerVersion(machine.environmentId, listing);
+                const environment = environmentsById.get(machine.environmentId);
+                const switchedOff = environment?.entry.enabled === false;
+                // A computer this device cannot reach has a fresher report than its cached config.
+                const savedVersion = machine.serverConfig?.environment.serverVersion ?? null;
+                const reportedVersion = directoryServerVersion(machine.environmentId, listing);
+                const currentVersion = machine.connected
+                  ? (savedVersion ?? reportedVersion)
+                  : (reportedVersion ?? savedVersion);
                 const status =
                   machine.updateState.status === "running"
                     ? "Updating runtime"
@@ -146,6 +154,7 @@ export function FleetUpdatesSection() {
                       ? "Update failed"
                       : describeFleetUpdateStatus({
                           connected: machine.connected,
+                          switchedOff,
                           currentVersion,
                           targetVersion: updates.targetVersion,
                           providerCount: providers.length,
@@ -177,7 +186,13 @@ export function FleetUpdatesSection() {
                         <div className="min-w-0 space-y-1">
                           <h3 className="wrap-anywhere text-sm font-medium">{machine.label}</h3>
                           <p className="text-xs text-muted-foreground">
-                            {machine.connected ? "Connected" : "Offline"}
+                            {switchedOff
+                              ? "Switched off on this device"
+                              : environment === undefined
+                                ? machine.connected
+                                  ? "Connected"
+                                  : "Offline"
+                                : connectionStatusTitle(environment.connection)}
                           </p>
                         </div>
                       </div>

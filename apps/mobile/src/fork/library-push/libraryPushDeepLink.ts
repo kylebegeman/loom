@@ -21,6 +21,8 @@ export function libraryPushDeepLink(value: string): string | null {
   const computer = computerSettingsDeepLink(value);
   if (computer !== null) return computer;
   if (value.trim() !== value || value.includes("#")) return null;
+  // Account lists every computer asking to join, so a join prompt opens it.
+  if (/^\/library\/join\/[^/?]+$/.test(value)) return "/library/settings";
   const bot = /^\/bots\/([^/?]+)\/inbox$/.exec(value);
   if (bot?.[1]) {
     try {

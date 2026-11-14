@@ -44,6 +44,7 @@ import * as ApnsClient from "./ApnsClient.ts";
 import {
   agentAlertRequest,
   type ApnsAlertRequest,
+  joinPromptRequest,
   LIBRARY_PUSH_TEST_ALERT,
 } from "./apnsPayloads.ts";
 import { libraryPushActivitySwitchOn, libraryPushConfig } from "./config.ts";
@@ -76,6 +77,8 @@ const DEVICE_TESTS_PER_WINDOW = 3;
 const ALERT_WINDOW_MS = 60 * 60_000;
 const ALERTS_PER_COMPUTER = 20;
 const ALERTS_PER_DEVICE = 30;
+// Anyone can start a join request, so prompts share one small budget for the whole Library.
+const JOIN_PROMPTS_PER_WINDOW = 10;
 const SEND_CONCURRENCY = 4;
 // A .p8 is a few hundred bytes; anything this large is not one.
 const KEY_FILE_MAX_BYTES = 16 * 1024;
@@ -136,6 +139,16 @@ export class LibraryPushService extends Context.Service<
       environmentId: EnvironmentId,
       request: LibraryPushActivityRequest,
     ) => Effect.Effect<LibraryPushActivityReply, LibraryPushError>;
+    /**
+     * Asks the owner's devices to answer a computer waiting to join. Best effort: with push off,
+     * no owner device or the hour's prompts spent it sends nothing, and the computer's terminal
+     * still shows a code to type.
+     */
+    readonly joinPrompt: (input: {
+      readonly libraryEnvironmentId: EnvironmentId;
+      readonly requestId: string;
+      readonly expiresAt: number;
+    }) => Effect.Effect<void>;
   }
 >()("t3/fork/library-push/LibraryPushService") {}
 
@@ -165,6 +178,7 @@ const disabled = (reason: "not-library" | null) =>
     alert: Effect.fn("LibraryPushService.alert")(function* () {
       return yield* refuse("off");
     }),
+    joinPrompt: Effect.fn("LibraryPushService.joinPrompt")(() => Effect.void),
   });
 
 type KeyLoad =
@@ -346,6 +360,7 @@ const make = Effect.gen(function* () {
   const deviceTests = new Map<string, ReadonlyArray<number>>();
   const computerAlerts = new Map<string, ReadonlyArray<number>>();
   const deviceAlerts = new Map<string, ReadonlyArray<number>>();
+  const joinPrompts = new Map<string, ReadonlyArray<number>>();
 
   /** The store is written first; memory follows only a successful write. */
   const commit = (next: LibraryPushRegistry) =>
@@ -526,6 +541,21 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  /** Takes the Library's join prompt slot and picks the owner's live devices, under the lock. */
+  const planJoinPrompt = lock.withPermits(1)(
+    Effect.gen(function* () {
+      const nowMs = yield* Clock.currentTimeMillis;
+      pruneSlots(joinPrompts, nowMs, ALERT_WINDOW_MS);
+      if (!takeSlot(joinPrompts, "library", nowMs, JOIN_PROMPTS_PER_WINDOW)) return null;
+      const pruned = pruneRegistry(yield* Ref.get(registryRef), policyAt(nowMs));
+      yield* commitPrune(pruned);
+      const targets = pruned.registry.devices.filter((row) =>
+        config.joinRecipients.includes(row.subject),
+      );
+      return { targets, sends: targets } satisfies SendPlan;
+    }),
+  );
+
   /** Sent outside the lock: a slow Apple reply must not hold up registrations. */
   const sendAll = (
     send: ApnsClient.ApnsSender["send"],
@@ -658,6 +688,22 @@ const make = Effect.gen(function* () {
     } satisfies LibraryPushActivityReply;
   });
 
+  const joinPrompt = Effect.fn("LibraryPushService.joinPrompt")(function* (input: {
+    readonly libraryEnvironmentId: EnvironmentId;
+    readonly requestId: string;
+    readonly expiresAt: number;
+  }) {
+    if (sender === null || config.joinRecipients.length === 0) return;
+    const plan = yield* planJoinPrompt;
+    if (plan === null || plan.sends.length === 0) return;
+    const results = yield* sendAll(
+      sender.send,
+      plan.sends,
+      joinPromptRequest({ ...input, nowMs: yield* Clock.currentTimeMillis }),
+    );
+    yield* settle(plan, results);
+  });
+
   return LibraryPushService.of({
     status,
     register,
@@ -665,6 +711,7 @@ const make = Effect.gen(function* () {
     test,
     alerts: recipients !== null,
     alert,
+    joinPrompt,
   });
 });
 
