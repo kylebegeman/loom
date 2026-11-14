@@ -148,6 +148,9 @@ export function ApproveComputer() {
             <p className="text-sm text-muted-foreground">
               Approve only if both match the computer’s terminal. Loom will save its conversations
               and connect it to your other devices.
+              {review.state === "pending" && passkey !== null
+                ? " Approving asks for your passkey."
+                : null}
             </p>
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">Computer identity</summary>
