@@ -19,6 +19,7 @@ import * as Clients from "./SwitchboardClients.ts";
 
 const HUB = EnvironmentId.make("dorothy");
 const AIR = EnvironmentId.make("air");
+const MINI = EnvironmentId.make("mini");
 const membership = (environmentId: EnvironmentId) => ({
   environmentId,
   keyFingerprint: "f".repeat(64),
@@ -34,6 +35,8 @@ const fixture = Effect.gen(function* () {
   const baseDir = yield* fs.makeTempDirectoryScoped();
   const state = {
     redeemFor: AIR,
+    /** Tickets that redeem for another computer than `redeemFor`. */
+    tickets: {} as Record<string, EnvironmentId>,
     active: [AIR] as ReadonlyArray<EnvironmentId>,
     library: "up" as "up" | "down" | "refusing",
     environment: { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" } as NodeJS.ProcessEnv,
@@ -46,8 +49,15 @@ const fixture = Effect.gen(function* () {
       endpoint: (path) => `https://library.example.test${path}`,
       send: (request) => {
         if (state.library === "down") return Effect.fail(new LibraryError({ reason: "io" }));
+        const ticket =
+          request.body._tag === "Uint8Array"
+            ? String(JSON.parse(new TextDecoder().decode(request.body.body)).ticket)
+            : "";
         const body = request.url.endsWith(SWITCHBOARD_REDEEM_ROUTE)
-          ? { label: "Kyle’s MacBook Air", membership: membership(state.redeemFor) }
+          ? {
+              label: "Kyle’s MacBook Air",
+              membership: membership(state.tickets[ticket] ?? state.redeemFor),
+            }
           : request.url.endsWith(SWITCHBOARD_MEMBERS_ROUTE)
             ? { active: state.active }
             : null;
@@ -132,6 +142,42 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         expect(yield* clients.list).toEqual([]);
       }).pipe(Effect.provide(f.layer));
     }),
+  );
+
+  it.effect(
+    "keeps every computer's newest credential when enrollments and revocations overlap",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        f.state.tickets = { ["m".repeat(64)]: MINI };
+        const air = yield* Effect.gen(function* () {
+          const clients = yield* Clients.SwitchboardClients;
+          const [, mini] = yield* Effect.all(
+            [clients.enroll("t".repeat(64)), clients.enroll("m".repeat(64))],
+            { concurrency: "unbounded" },
+          );
+          expect((yield* clients.list).map((entry) => entry.environmentId).toSorted()).toEqual([
+            AIR,
+            MINI,
+          ]);
+          const [, air] = yield* Effect.all(
+            [clients.revoke(MINI), clients.enroll("t".repeat(64))],
+            {
+              concurrency: "unbounded",
+            },
+          );
+          expect(yield* clients.authenticate(Redacted.value(mini))).toEqual(Option.none());
+          return air;
+        }).pipe(Effect.provide(f.layer));
+        const restarted = yield* Effect.gen(function* () {
+          const clients = yield* Clients.SwitchboardClients;
+          return {
+            listed: (yield* clients.list).map((entry) => entry.environmentId),
+            air: Option.isSome(yield* clients.authenticate(Redacted.value(air))),
+          };
+        }).pipe(Effect.provide(f.layer));
+        expect(restarted).toEqual({ listed: [AIR], air: true });
+      }),
   );
 
   it.effect("issues nothing unless sharing, and never to the hub itself", () =>

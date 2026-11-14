@@ -159,9 +159,6 @@ const make = Effect.gen(function* () {
     );
     const environmentId = redemption.membership.environmentId;
     if (environmentId === ownId) return yield* new SwitchboardAccountError({ reason: "denied" });
-    // The membership check sends every computer at once, and the Library refuses more than this.
-    if (!computers.has(environmentId) && computers.size >= SWITCHBOARD_MAX_COMPUTERS)
-      return yield* new SwitchboardAccountError({ reason: "denied" });
     const credential = Hex.encode(yield* random.randomBytes(32).pipe(Effect.mapError(unavailable)));
     const entry: StoredComputer = {
       label: redemption.label,
@@ -170,7 +167,14 @@ const make = Effect.gen(function* () {
       membership: redemption.membership,
       issuedAt: yield* Clock.currentTimeMillis,
     };
-    yield* lock.withPermit(save(new Map([...computers, [environmentId, entry]])));
+    yield* lock.withPermit(
+      Effect.suspend(() => {
+        // The membership check sends every computer at once, and the Library refuses more than this.
+        if (!computers.has(environmentId) && computers.size >= SWITCHBOARD_MAX_COMPUTERS)
+          return Effect.fail(new SwitchboardAccountError({ reason: "denied" }));
+        return save(new Map([...computers, [environmentId, entry]]));
+      }),
+    );
     return Redacted.make(credential);
   });
 
