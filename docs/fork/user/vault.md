@@ -11,7 +11,9 @@ existing Vault settings until updated.
 
 ## Open a Vault
 
-Open **Settings > Vault** and use **Settings on** to choose whose Vault to manage.
+On web and desktop, open **Settings > Vault** and use **Settings on** to choose whose Vault to
+manage. On mobile, **Settings > Vault** opens the account Vault, and a computer's existing Vault
+is in that computer's settings, below the **Account Vault** card.
 
 - **Account Vault:** choose your Library. **Manage account Vault**, in **Settings > Computers >
   Account** or on a computer's Vault page, opens the same place. Your Library must support
@@ -19,18 +21,17 @@ Open **Settings > Vault** and use **Settings on** to choose whose Vault to manag
   execution computers do not need OpenBao credentials. This device's connection to your Library
   also needs Vault access. When it lacks that access, the **Account Vault** card has no
   **Manage account Vault** button and explains the repair: pair this device again with a link
-  that includes **View access** and **Manage access**, or, for an Identity sign-in, have the
-  Library allow admin access for Identity sessions (see
-  [Reach](../operations/reach.md)) and sign in again. Until then, use a computer's existing
-  Vault.
+  that includes **View access** and **Manage access**, or, for an Identity sign-in, set
+  `LOOM_IDENTITY_ALLOW_ADMIN=true` on the Library (see [Reach](../operations/reach.md)),
+  restart it and sign in again. Until then, use a computer's existing Vault.
 - **A computer's existing Vault:** choose the computer. When the account Vault can be managed
   from this device, the computer's own Vault is folded under **This computer’s existing Vault**
   below the **Account Vault** card. Expand it to reach **Vault items**, **Access**, **GitHub
-  for agents** and that computer's other Vault settings. The sections this guide places under
-  **Advanced**, such as **Imports** and **Credential brokers**, appear in the same fold. When
-  the account Vault cannot be managed from here (no Vault access, or the Library needs
-  reconnecting), there is no fold: the sections appear directly on the page and less frequent
-  tools are under **Advanced**.
+  for agents** and that computer's other Vault settings. On web and desktop, the sections this
+  guide places under **Advanced**, such as **Imports** and **Credential brokers**, appear in the
+  same fold. When this device's Library session lacks Vault access, there is no fold: the
+  sections appear directly on the page, and on web and desktop less frequent tools are under
+  **Advanced**. A brief Library reconnect does not change the layout.
 
 To add an item to a computer's existing Vault, open its Vault as above and choose **Add item**
 in **Vault items**, or run **Add to Vault...** from the command palette in a thread on that
@@ -984,8 +985,9 @@ saved preparation digest. Cancelled preparation needs a new request and operatio
 resumes an operation, changes a reservation or grants access. Journal errors leave ordinary
 approval review available.
 
-The inbox starts with pending requests. Choose **Show request history** to review retained
-decisions or revoke an active or expired approval, then **Hide request history** to return. Counts and
+The inbox starts with pending requests. Choose **Show request history** (**Show temporary request history**
+on mobile) to review retained decisions or revoke an active or expired approval, then **Hide
+request history** (**Hide temporary request history** on mobile) to return. Counts and
 visible pending work update at expiry; server-side checks remain authoritative.
 
 Approval cards show current record, thread and project names alongside the IDs and version

@@ -20,6 +20,7 @@ import {
 import {
   createVaultCoreAtoms,
   createVaultAccessAtoms,
+  foldsComputerVault,
   supportsLoomFeature,
   vaultStatusMessage,
   VAULT_KIND_LABELS,
@@ -46,8 +47,8 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { uuidv4 } from "../../lib/uuid";
 import { downloadAttachmentForPreview } from "../../lib/attachmentDownload";
-import { useLibraryAuthority } from "../library/libraryState";
 import { AccountVaultEntry } from "./AccountVaultEntry";
+import { useAccountVault } from "./useAccountVault";
 
 const vault = createVaultCoreAtoms(connectionAtomRuntime);
 const access = createVaultAccessAtoms(connectionAtomRuntime);
@@ -57,13 +58,11 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : "The Vault operation failed. Try again.";
 
 export function VaultSettingsSection(props: { environmentId: EnvironmentId; connected: boolean }) {
-  const authority = useLibraryAuthority();
-  const accountConfig = useEnvironmentServerConfig(authority.environmentId);
+  const { authority, state, access } = useAccountVault();
   const [legacyOpen, setLegacyOpen] = useState(false);
-  if (
-    authority.environmentId !== props.environmentId &&
-    supportsLoomFeature(accountConfig?.environment.capabilities, ACCOUNT_VAULT_FEATURE)
-  )
+  const elsewhere = authority.environmentId !== props.environmentId;
+  // A device whose Library session lacks Vault access keeps the computer's Vault in view.
+  if (foldsComputerVault({ elsewhere, state, access }))
     return (
       <>
         <AccountVaultEntry />
@@ -77,7 +76,12 @@ export function VaultSettingsSection(props: { environmentId: EnvironmentId; conn
         {legacyOpen ? <ComputerVaultSettings {...props} /> : null}
       </>
     );
-  return <ComputerVaultSettings {...props} />;
+  return (
+    <>
+      {elsewhere && access === "denied" ? <AccountVaultEntry /> : null}
+      <ComputerVaultSettings {...props} />
+    </>
+  );
 }
 
 function ComputerVaultSettings({

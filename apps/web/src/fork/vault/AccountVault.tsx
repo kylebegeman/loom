@@ -4,8 +4,11 @@ import {
   accountVaultDetail,
   accountVaultState,
   connectsWithIdentity,
+  settleAccountVaultAccess,
   supportsLoomFeature,
+  type AccountVaultAccess,
 } from "@t3tools/client-runtime/fork";
+import { useState } from "react";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { useEnvironmentSessionState } from "~/state/session";
@@ -21,11 +24,14 @@ export function useAccountVault() {
       ACCOUNT_VAULT_FEATURE,
     ),
     connected: authority.connected,
-    identity: connectsWithIdentity(authority.environment?.entry),
+    identity: connectsWithIdentity(authority.environment?.entry, session.data),
     session: session.data,
     sessionFailed: session.hasError,
   });
-  return { authority, state };
+  const [access, setAccess] = useState<AccountVaultAccess>("unknown");
+  const settled = settleAccountVaultAccess(access, state);
+  if (settled !== access) setAccess(settled);
+  return { authority, state, access: settled };
 }
 
 export function AccountVault() {

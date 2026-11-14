@@ -25,7 +25,7 @@ export function AccountVaultScreen() {
           label="Set up your account"
           onPress={() => navigation.navigate("LibrarySettings")}
         />
-      ) : !authority.connected ? (
+      ) : !authority.connected || vault.state.kind === "signed-out" ? (
         <Button
           label="Sign in to your account"
           onPress={() => navigation.navigate("LibrarySignIn", {})}

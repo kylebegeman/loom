@@ -2,8 +2,11 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   accountVaultState,
   connectsWithIdentity,
+  settleAccountVaultAccess,
   supportsLoomFeature,
+  type AccountVaultAccess,
 } from "@t3tools/client-runtime/fork";
+import { useState } from "react";
 import { ACCOUNT_VAULT_FEATURE } from "@t3tools/contracts/fork";
 import type { AuthSessionState } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -28,9 +31,15 @@ export function useAccountVault() {
     authorityId: authority.environmentId,
     supported: supportsLoomFeature(config?.environment.capabilities, ACCOUNT_VAULT_FEATURE),
     connected: authority.connected,
-    identity: connectsWithIdentity(presentation?.entry),
+    identity: connectsWithIdentity(
+      presentation?.entry,
+      AsyncResult.getOrElse(session, () => null),
+    ),
     session: AsyncResult.getOrElse(session, () => null),
     sessionFailed: session._tag === "Failure",
   });
-  return { authority, state };
+  const [access, setAccess] = useState<AccountVaultAccess>("unknown");
+  const settled = settleAccountVaultAccess(access, state);
+  if (settled !== access) setAccess(settled);
+  return { authority, state, access: settled };
 }

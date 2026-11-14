@@ -22,7 +22,7 @@ export function AccountVaultEntry() {
         {state.kind === "no-access" ? null : (
           <Button
             label="Manage account Vault"
-            // The screen offers sign-in when the account needs reconnecting.
+            // The screen offers sign-in when the account is offline or signed out.
             disabled={state.kind === "checking"}
             onPress={() => navigation.navigate("AccountVault")}
           />

@@ -49,6 +49,7 @@ import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection
 import { VaultPasswordSettingsSection } from "../vault/PasswordGenerator";
 import { VaultProfileSettingsSection } from "../vault/ProfileSettingsSection";
 import { VaultSettingsSection } from "../vault/SettingsSection";
+import { foldsComputerVault } from "@t3tools/client-runtime/fork";
 import { AccountVault, useAccountVault } from "../vault/AccountVault";
 import { VaultTestAccountSettingsSection } from "../vault/TestAccountSettingsSection";
 import {
@@ -89,13 +90,13 @@ const topicsOn = (page: ForkSettingsHome) =>
 const targetIdOf = (topic: ForkSettingsSection) => `loom-${topic.id}`;
 
 export function VaultSettingsPage() {
-  const { authority, state } = useAccountVault();
+  const { authority, state, access } = useAccountVault();
   const { environment } = useSettingsScope();
   const topics = topicsOn("/settings/vault");
   const advanced = topics.filter((topic) => topic.advanced);
   const elsewhere = authority.authorityId !== environment?.environmentId;
-  // Fold the computer's Vault only while the account Vault is usable from here.
-  if (elsewhere && (state.kind === "open" || state.kind === "checking"))
+  // A device whose Library session lacks Vault access keeps the computer's Vault in view.
+  if (foldsComputerVault({ elsewhere, state, access }))
     return (
       <SettingsPageContainer scopePresentation="computer">
         <AccountVault />
@@ -104,9 +105,7 @@ export function VaultSettingsPage() {
     );
   return (
     <SettingsPageContainer scopePresentation="computer">
-      {state.kind === "no-access" || (elsewhere && state.kind === "reconnect") ? (
-        <AccountVault />
-      ) : null}
+      {access === "denied" ? <AccountVault /> : null}
       {topics
         .filter((topic) => !topic.advanced)
         .map((topic) => (
