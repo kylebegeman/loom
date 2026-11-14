@@ -249,7 +249,7 @@ const withoutTreeDataPayloads = (tree: string) =>
     })
     .join("\n");
 
-// Leave time for image work inside the broker's 15s request budget.
+// The broker waits 15s for the host; a snapshot, retry included, answers well before.
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 const FRAME_ANSWER_MS = 1_000;
 
@@ -653,6 +653,12 @@ const capture = async (
       else running.set(stage, count);
     }
   };
+  // fork: browser-text-snapshot
+  const image = input.includeImage !== false || input.fullScreenshot === true;
+  // fork: browser-text-snapshot
+  const rendering = image ? await track("metrics", () => renderingOf(input)) : undefined;
+  // A late metrics reply must not begin a capture after viewers have resumed.
+  if (Date.now() >= deadline) throw snapshotTimedOut();
   const state = refsFor(input.page);
   invalidateRefs(input.page);
   const generation = state.generation;
@@ -710,10 +716,9 @@ const capture = async (
     });
   let screenshot: PreviewAutomationSnapshot["screenshot"];
   let fullScreenshot: PreviewAutomationSnapshot["fullScreenshot"];
-  if (input.includeImage !== false || input.fullScreenshot === true) {
-    const { renderScale, viewport } = await track("metrics", () => renderingOf(input));
-    // A late metrics reply must not begin a capture after the snapshot deadline.
-    if (Date.now() >= deadline) throw snapshotTimedOut();
+  // fork: browser-text-snapshot
+  if (rendering) {
+    const { renderScale, viewport } = rendering;
     const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
     const { full, data } = await track("screenshot", () =>
       captureViewport(input.cdp, { format: "png" }).then(async (full) => ({
@@ -746,13 +751,9 @@ export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationS
   const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
   const stages: SnapshotStages = { running: new Map(), timedOut: new Set() };
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // Image work keeps the host's capture lock until CDP settles; the host bounds the request.
-  const expired =
-    input.includeImage === false && input.fullScreenshot !== true
-      ? new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(snapshotTimedOut(stages)), SNAPSHOT_TIMEOUT_MS);
-        })
-      : undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(snapshotTimedOut(stages)), SNAPSHOT_TIMEOUT_MS);
+  });
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
   // Retry only before the deadline and the next snapshot, whose refs a later retry would revoke.
@@ -764,7 +765,7 @@ export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationS
       : Promise.reject(cause),
   );
   try {
-    return await (expired ? Promise.race([captured, expired]) : captured);
+    return await Promise.race([captured, expired]);
   } catch (cause) {
     throw isTimeout(cause) ? snapshotTimedOut(stages) : cause;
   } finally {
