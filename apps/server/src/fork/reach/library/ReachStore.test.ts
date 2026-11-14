@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -55,9 +56,19 @@ describe("ReachStore", () => {
         yield* store.update((state) => ({
           ...state,
           computers: { "environment-studio": computer() },
+          vaultBackend: {
+            environmentId: EnvironmentId.make("environment-studio"),
+            keyFingerprint: "f".repeat(64),
+            ownerSubject: "owner",
+          },
         }));
         const restarted = yield* storeAt(file);
         expect((yield* restarted.read).computers["environment-studio"]).toEqual(computer());
+        expect((yield* restarted.read).vaultBackend).toEqual({
+          environmentId: "environment-studio",
+          keyFingerprint: "f".repeat(64),
+          ownerSubject: "owner",
+        });
       }),
     ),
   );

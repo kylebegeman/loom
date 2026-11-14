@@ -17,6 +17,8 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpIncomingMessage } f
 import { isDirectoryRouteUrl } from "@t3tools/shared/fork/directory";
 import * as AccountWorkloads from "../account-access/AccountWorkloads.ts";
 import * as Directory from "../directory/DirectoryService.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
+import { ReachStore } from "../reach/library/ReachStore.ts";
 import * as Store from "./OpenBaoStore.ts";
 
 export class AccountVaultRouting extends Context.Service<
@@ -34,40 +36,41 @@ export class AccountVaultRouting extends Context.Service<
 const decodeFailure = Schema.decodeUnknownEffect(AccountVaultFailure);
 const make = Effect.gen(function* () {
   const store = yield* Store.OpenBaoStore;
+  const connection = yield* LibraryConnectionService;
+  const reach = yield* ReachStore;
   const directory = yield* Directory.DirectoryService;
   const workloads = yield* AccountWorkloads.AccountWorkloads;
   const http = yield* HttpClient.HttpClient;
   const unavailable = () => new VaultError({ reason: "unavailable" });
   const backend = Effect.gen(function* () {
-    if (
-      typeof store.configured === "boolean"
-        ? store.configured
-        : (yield* store.status).state !== "unconfigured"
-    )
+    if ((yield* connection.current.pipe(Effect.mapError(unavailable))).kind !== "authority")
       return Option.none();
-    const candidates = (yield* directory.list.pipe(
-      Effect.mapError(unavailable),
-    )).environments.filter((entry) => entry.vaultBackend === true);
-    if (candidates.length !== 1)
-      return yield* new VaultError({
-        reason: candidates.length === 0 ? "configuration" : "unavailable",
-      });
-    return Option.some(candidates[0]!);
-  });
-  return AccountVaultRouting.of({
-    backend,
-    forward: Effect.fn("AccountVaultRouting.forward")(function* (envelope, publisher, route) {
+    const pin = (yield* reach.read.pipe(Effect.mapError(unavailable))).vaultBackend;
+    if (!pin) {
       if (
         typeof store.configured === "boolean"
           ? store.configured
           : (yield* store.status).state !== "unconfigured"
       )
         return Option.none();
+      return yield* new VaultError({ reason: "configuration" });
+    }
+    const key = yield* directory.pinned(pin.environmentId).pipe(Effect.mapError(unavailable));
+    if (!key || key.keyFingerprint !== pin.keyFingerprint) return yield* unavailable();
+    const host = (yield* directory.list.pipe(Effect.mapError(unavailable))).environments.find(
+      (entry) => entry.environmentId === pin.environmentId,
+    );
+    if (!host || host.keyFingerprint !== pin.keyFingerprint) return yield* unavailable();
+    return Option.some(host);
+  });
+  return AccountVaultRouting.of({
+    backend,
+    forward: Effect.fn("AccountVaultRouting.forward")(function* (envelope, publisher, route) {
+      const selected = yield* backend;
+      if (Option.isNone(selected)) return Option.none();
       const lease = yield* route === "workload"
         ? workloads.accept(envelope.payload, envelope.proof, publisher)
         : workloads.acceptProvider(envelope.payload, envelope.proof, publisher);
-      const selected = yield* backend;
-      if (Option.isNone(selected)) return Option.none();
       const host = selected.value;
       const origin =
         host.routes.find((entry) => entry.kind === "public")?.url ??

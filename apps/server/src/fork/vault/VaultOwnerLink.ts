@@ -31,6 +31,7 @@ import { LibraryConnectionService } from "../project-library/LibraryConnection.t
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { LibraryService } from "../project-library/LibraryService.ts";
+import { ReachStore } from "../reach/library/ReachStore.ts";
 import { VaultAccess } from "./VaultAccess.ts";
 
 const APPROVAL_LIFETIME_MS = 300_000;
@@ -72,6 +73,7 @@ export class VaultOwnerLink extends Context.Service<
 
 const make = Effect.gen(function* () {
   const access = yield* VaultAccess;
+  const reach = yield* ReachStore;
   const management = yield* LibraryManagement;
   const library = yield* LibraryService;
   const publisher = yield* LibraryPublisher;
@@ -189,6 +191,25 @@ const make = Effect.gen(function* () {
     yield* authority(entry.request);
     const ownerSubject = yield* ownerSession(entry.session);
     if (ownerSubject !== entry.ownerSubject) return yield* denied();
+    if (input.applied) {
+      const approved = {
+        environmentId: entry.request.sourceEnvironmentId,
+        keyFingerprint: entry.request.keyFingerprint,
+        ownerSubject,
+      };
+      const saved = yield* reach
+        .update((state) => ({
+          ...state,
+          vaultBackend: state.vaultBackend ?? approved,
+        }))
+        .pipe(Effect.mapError(unavailable));
+      if (
+        saved.vaultBackend?.environmentId !== approved.environmentId ||
+        saved.vaultBackend.keyFingerprint !== approved.keyFingerprint ||
+        saved.vaultBackend.ownerSubject !== approved.ownerSubject
+      )
+        return yield* new VaultError({ reason: "conflict" });
+    }
     return { request: entry.request, ownerSubject, expiresAt: entry.expiresAt };
   });
   const remoteVerification = Effect.fn("VaultOwnerLink.remoteVerification")(function* (
@@ -233,6 +254,14 @@ const make = Effect.gen(function* () {
       const request = yield* decodeRequest(raw).pipe(Effect.mapError(denied));
       const ownerSubject = yield* ownerSession(session);
       yield* authority(request);
+      const backend = (yield* reach.read.pipe(Effect.mapError(unavailable))).vaultBackend;
+      if (
+        backend &&
+        (backend.environmentId !== request.sourceEnvironmentId ||
+          backend.keyFingerprint !== request.keyFingerprint ||
+          backend.ownerSubject !== ownerSubject)
+      )
+        return yield* new VaultError({ reason: "conflict" });
       const now = yield* Clock.currentTimeMillis;
       for (const [token, entry] of pending) if (entry.expiresAt <= now) pending.delete(token);
       if (pending.size >= MAX_PENDING_APPROVALS) return yield* unavailable();
@@ -253,12 +282,14 @@ const make = Effect.gen(function* () {
           current.ownerSubject === verified.ownerSubject ? Effect.void : Effect.fail(denied()),
         ),
       );
-      return yield* access.linkOwner(
+      const snapshot = yield* access.linkOwner(
         input.request,
         verified.ownerSubject,
         session.subject,
         revalidate,
       );
+      yield* remoteVerification({ ...input, applied: true });
+      return snapshot;
     }),
   });
 });

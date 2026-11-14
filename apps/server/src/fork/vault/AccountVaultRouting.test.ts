@@ -1,9 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import { AuthSessionId, EnvironmentId } from "@t3tools/contracts";
-import { VaultError } from "@t3tools/contracts/fork";
+import { VaultError, DirectoryError } from "@t3tools/contracts/fork";
 import { AccountVaultRouting, layer } from "./AccountVaultRouting.ts";
 import { OpenBaoStore } from "./OpenBaoStore.ts";
 import { AccountWorkloads } from "../account-access/AccountWorkloads.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
+import { ReachStore, emptyReachLibraryState } from "../reach/library/ReachStore.ts";
 import { DirectoryService } from "../directory/DirectoryService.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,7 +13,7 @@ import * as Option from "effect/Option";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 it.effect(
-  "routes an enrolled workload to the advertised backend instead of an unconfigured Library",
+  "routes only to the owner-approved backend even when another computer advertises a Vault",
   () =>
     Effect.gen(function* () {
       const received: string[] = [];
@@ -22,6 +24,19 @@ it.effect(
           layer.pipe(
             Layer.provide(
               Layer.mergeAll(
+                Layer.mock(LibraryConnectionService)({
+                  current: Effect.succeed({ kind: "authority" }),
+                }),
+                Layer.mock(ReachStore)({
+                  read: Effect.succeed({
+                    ...emptyReachLibraryState,
+                    vaultBackend: {
+                      environmentId: EnvironmentId.make("vault-host"),
+                      keyFingerprint: "pin",
+                      ownerSubject: "owner",
+                    },
+                  }),
+                }),
                 Layer.mock(OpenBaoStore)({
                   status: Effect.succeed({
                     backend: "openbao",
@@ -30,10 +45,13 @@ it.effect(
                   }),
                 }),
                 Layer.mock(DirectoryService)({
+                  pinned: () => Effect.succeed({ keyFingerprint: "pin" } as never),
                   list: Effect.succeed({
                     environments: [
+                      { environmentId: EnvironmentId.make("unapproved-host"), vaultBackend: true },
                       {
                         environmentId: EnvironmentId.make("vault-host"),
+                        keyFingerprint: "pin",
                         label: "Vault computer",
                         vaultBackend: true,
                         routes: [{ kind: "public", url: "https://vault.test/" }],
@@ -95,4 +113,36 @@ it.effect(
         host: { environmentId: "vault-host", label: "Vault computer" },
       });
     }),
+);
+
+it.effect("leaves ordinary enrolled computers to their account-aware Vault handlers", () =>
+  Effect.gen(function* () {
+    const routing = yield* AccountVaultRouting.pipe(
+      Effect.provide(
+        layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(ReachStore)({}),
+              Layer.mock(OpenBaoStore)({ configured: false }),
+              Layer.mock(LibraryConnectionService)({
+                current: Effect.succeed({ kind: "remote" } as never),
+              }),
+              Layer.mock(DirectoryService)({
+                list: Effect.fail(new DirectoryError({ reason: "not-authority" })),
+              }),
+              Layer.mock(AccountWorkloads)({}),
+              Layer.succeed(
+                HttpClient.HttpClient,
+                HttpClient.make(() => Effect.die("Unexpected request")),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(yield* routing.backend).toEqual(Option.none());
+    expect(
+      yield* routing.forward({ payload: "{}", proof: "proof" }, {} as never, "status"),
+    ).toEqual(Option.none());
+  }),
 );

@@ -39,6 +39,7 @@ import { LibraryConnectionService } from "../project-library/LibraryConnection.t
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { LibraryService } from "../project-library/LibraryService.ts";
+import { ReachStore, emptyReachLibraryState } from "../reach/library/ReachStore.ts";
 import { VaultAccess } from "./VaultAccess.ts";
 import * as OwnerLink from "./VaultOwnerLink.ts";
 
@@ -93,6 +94,7 @@ const fixture = Effect.gen(function* () {
     keyFingerprint: FINGERPRINT,
     authorityEpoch: 1,
     writes: 0,
+    reach: { ...emptyReachLibraryState },
     verificationCount: 0,
     revokeAtVerification: null as number | null,
   };
@@ -105,6 +107,10 @@ const fixture = Effect.gen(function* () {
   }));
   const common = Layer.mergeAll(
     NodeCrypto.layer,
+    Layer.mock(ReachStore)({
+      read: Effect.sync(() => state.reach),
+      update: (change) => Effect.sync(() => (state.reach = change(state.reach))),
+    }),
     Layer.succeed(HostProcess.Environment, environment),
     Layer.mock(VaultAccess)({
       ownerLinkBinding: () =>
@@ -279,8 +285,19 @@ it.effect("links only the existing computer owner to the current verified Librar
     expect((yield* authority.verify(approval, publisher)).ownerSubject).toBe(
       identityOwnershipSubject(owner.subject, environment),
     );
+    expect(state.reach.vaultBackend).toBeUndefined();
     expect((yield* source.apply(approval, local, Effect.void)).revision).toBe(19);
     expect(state.writes).toBe(1);
+    expect(state.reach.vaultBackend).toEqual({
+      environmentId: SOURCE,
+      keyFingerprint: FINGERPRINT,
+      ownerSubject: identityOwnershipSubject(owner.subject, environment),
+    });
+    state.reach.vaultBackend = {
+      ...state.reach.vaultBackend!,
+      environmentId: EnvironmentId.make("another-backend"),
+    };
+    expect((yield* authority.approve(prepared, owner).pipe(Effect.flip)).reason).toBe("conflict");
     for (const subject of [
       "desktop-bootstrap",
       "thread:agent",

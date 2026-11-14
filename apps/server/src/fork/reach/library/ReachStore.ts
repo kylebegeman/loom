@@ -1,4 +1,4 @@
-import { NonNegativeInt } from "@t3tools/contracts";
+import { EnvironmentId, NonNegativeInt } from "@t3tools/contracts";
 import {
   ReachAllowlistState,
   ReachFailureReason,
@@ -132,6 +132,13 @@ export type ReachStoredEdge = typeof ReachStoredEdge.Type;
 /** No secret lives here: the connector token is fetched per ensure and never kept. */
 export const ReachLibraryState = Schema.Struct({
   version: Schema.Literal(1),
+  vaultBackend: Schema.optionalKey(
+    Schema.Struct({
+      environmentId: EnvironmentId,
+      keyFingerprint: Schema.String,
+      ownerSubject: Schema.String,
+    }),
+  ),
   zone: Schema.NullOr(ReachStoredZone),
   edge: Schema.NullOr(ReachStoredEdge),
   computers: Schema.Record(Schema.String, ReachStoredComputer),

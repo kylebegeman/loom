@@ -407,7 +407,15 @@ const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
 );
 const layerAccountVaultRouting = AccountVaultRouting.layer.pipe(
-  Layer.provide(Layer.mergeAll(layerVaultStore, layerDirectory, layerAccountWorkloads)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultStore,
+      layerDirectory,
+      layerAccountWorkloads,
+      layerReachStore,
+      LibraryConnection.layer,
+    ),
+  ),
   Layer.provide(FetchHttpClient.layer),
 );
 const layerAccountVaultHuman = AccountVaultHuman.layer.pipe(
@@ -512,6 +520,7 @@ const layerVaultOwnerLink = VaultOwnerLink.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerVaultAccess,
+      layerReachStore,
       layerLibraryManagement,
       layerLibraryService,
       layerLibraryPublisher,

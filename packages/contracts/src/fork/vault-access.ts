@@ -193,6 +193,7 @@ export const VaultOwnerLinkRequest = Schema.Struct({
 });
 export type VaultOwnerLinkRequest = typeof VaultOwnerLinkRequest.Type;
 export const VaultOwnerLinkApproval = Schema.Struct({
+  applied: Schema.optionalKey(Schema.Boolean),
   request: VaultOwnerLinkRequest,
   token: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   expiresAt: Time,
