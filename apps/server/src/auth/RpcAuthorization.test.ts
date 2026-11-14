@@ -3,7 +3,6 @@ import {
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
-  AuthAccessWriteScope, // fork: vault-provider-credentials
   AuthSettingsWriteScope,
   AuthAccessWriteScope,
   DEFAULT_SERVER_SETTINGS,

@@ -1660,7 +1660,7 @@ apps/web/src/components/ThreadTerminalDrawer.browser.test.tsx	preview-links	1
 apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx	source-control-cockpit	3
 apps/web/src/components/ChatView.tsx	brand	1
 apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx	vault-provider-credentials	2
-apps/server/src/auth/RpcAuthorization.test.ts	vault-provider-credentials	2
+apps/server/src/auth/RpcAuthorization.test.ts	vault-provider-credentials	1
 apps/server/src/auth/RpcAuthorization.ts	vault-provider-credentials	3
 apps/server/src/provider/ProviderInstanceRegistryHydration.ts	vault-provider-credentials	4
 apps/web/src/components/settings/ProviderInstanceCard.tsx	vault-provider-credentials	9
