@@ -1,6 +1,10 @@
 import * as AccountVaultHuman from "./vault/AccountVaultHuman.ts";
 import * as AccountVaultRouting from "./vault/AccountVaultRouting.ts";
 import * as SwitchboardGateway from "./switchboard/SwitchboardGateway.ts";
+import * as SwitchboardAccount from "./switchboard/SwitchboardAccount.ts";
+import * as SwitchboardClients from "./switchboard/SwitchboardClients.ts";
+import * as SwitchboardIssuer from "./switchboard/SwitchboardIssuer.ts";
+import { SwitchboardAccountRoutes } from "./switchboard/account-http.ts";
 import { SwitchboardGatewayRoutes } from "./switchboard/gateway-http.ts";
 import { upstreamWebSocketConstructor } from "../device/DeviceHubProxy.ts";
 import * as VaultOwnerLink from "./vault/VaultOwnerLink.ts";
@@ -390,6 +394,10 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
       RuntimeLayer.layerThreadManagementProvided,
     ),
   ),
+);
+// One store of issued credentials, shared by the gateway that checks them and the settings row.
+const layerSwitchboardClients = SwitchboardClients.layer.pipe(
+  Layer.provide(LibraryConnection.layer),
 );
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
@@ -855,9 +863,20 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   layerReachLibrary,
   layerAccountGateway,
+  layerSwitchboardClients,
   SwitchboardGateway.layer.pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(upstreamWebSocketConstructor),
+    Layer.provide(layerSwitchboardClients),
+  ),
+  SwitchboardIssuer.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(layerAccountWorkloads, layerDirectory, layerReachStore, layerLibraryPublisher),
+    ),
+  ),
+  SwitchboardAccount.layer.pipe(
+    Layer.provide(Layer.mergeAll(layerSwitchboardClients, layerDirectory, LibraryConnection.layer)),
+    Layer.provide(FetchHttpClient.layer),
   ),
   layerAccountHost,
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
@@ -901,6 +920,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   AccountVaultHttpRoutes,
   VaultOwnerLinkHttpRoutes,
   SwitchboardGatewayRoutes,
+  SwitchboardAccountRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

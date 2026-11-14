@@ -122,12 +122,19 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           );
           yield* writeTextFile(path.join(sharedHome, "auth.json"), '{"shared":true}\n');
           yield* writeTextFile(path.join(sharedHome, "auth.lock"), "");
+          yield* writeTextFile(path.join(sharedHome, "auth.json.lock"), "shared");
+          yield* writeTextFile(path.join(sharedHome, "auth.json.tmp"), "shared");
           yield* fileSystem.makeDirectory(shadowHome, { recursive: true });
           yield* writeTextFile(path.join(shadowHome, "auth.json"), '{"shadow":true}\n');
           yield* writeTextFile(path.join(shadowHome, "auth.lock"), "");
+          yield* writeTextFile(path.join(shadowHome, "auth.json.lock"), "shadow");
           yield* fileSystem.symlink(
             path.join(sharedHome, "models_cache.json"),
             path.join(shadowHome, "models_cache.json"),
+          );
+          yield* fileSystem.symlink(
+            path.join(sharedHome, "auth.json.tmp"),
+            path.join(shadowHome, "auth.json.tmp"),
           );
 
           const layout = yield* resolveCodexHomeLayout(
@@ -162,6 +169,11 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           expect(authLinkResult._tag).toBe("Failure");
           expect(authContents).toContain("shadow");
           expect(authLockLinkResult._tag).toBe("Failure");
+          // fork: codex-shadow-auth-lock -- the lock beside auth.json guards the private copy.
+          expect(yield* fileSystem.readFileString(path.join(shadowHome, "auth.json.lock"))).toBe(
+            "shadow",
+          );
+          expect(yield* fileSystem.exists(path.join(shadowHome, "auth.json.tmp"))).toBe(false);
         }),
     );
 

@@ -1,0 +1,165 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { expect, it } from "@effect/vitest";
+import { EnvironmentId } from "@t3tools/contracts";
+import { SWITCHBOARD_MEMBERS_ROUTE, SWITCHBOARD_REDEEM_ROUTE } from "@t3tools/contracts/fork";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import { HttpClientResponse } from "effect/http";
+import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../../config.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
+import { LibraryError } from "@t3tools/contracts/fork";
+import * as Clients from "./SwitchboardClients.ts";
+
+const HUB = EnvironmentId.make("dorothy");
+const AIR = EnvironmentId.make("air");
+const membership = (environmentId: EnvironmentId) => ({
+  environmentId,
+  keyFingerprint: "f".repeat(64),
+  authorityId: "authority",
+  authorityEpoch: 1,
+  membershipRevision: 10,
+  membershipEpoch: 0,
+  ownerSubject: "kyle",
+});
+
+const fixture = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const baseDir = yield* fs.makeTempDirectoryScoped();
+  const state = {
+    redeemFor: AIR,
+    active: [AIR] as ReadonlyArray<EnvironmentId>,
+    library: "up" as "up" | "down" | "refusing",
+    environment: { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" } as NodeJS.ProcessEnv,
+  };
+  const connection = Layer.mock(LibraryConnectionService)({
+    current: Effect.succeed({
+      kind: "remote",
+      credential: null,
+      origin: "https://library.example.test",
+      endpoint: (path) => `https://library.example.test${path}`,
+      send: (request) => {
+        if (state.library === "down") return Effect.fail(new LibraryError({ reason: "io" }));
+        const body = request.url.endsWith(SWITCHBOARD_REDEEM_ROUTE)
+          ? { label: "Kyle’s MacBook Air", membership: membership(state.redeemFor) }
+          : request.url.endsWith(SWITCHBOARD_MEMBERS_ROUTE)
+            ? { active: state.active }
+            : null;
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            state.library === "refusing"
+              ? new Response(null, { status: 403 })
+              : Response.json(body, { status: body === null ? 404 : 200 }),
+          ),
+        );
+      },
+    }),
+  });
+  const layer = Clients.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        connection,
+        ServerSecretStore.layer.pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir))),
+        Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(HUB) }),
+        Layer.effect(
+          HostProcess.Environment,
+          Effect.sync(() => state.environment),
+        ),
+      ),
+    ),
+  );
+  const secretsDir = `${baseDir}/userdata/secrets`;
+  return { state, layer, fs, secretsDir };
+});
+
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clients", (it) => {
+  it.effect(
+    "issues each computer one credential, keeps only its hash, and survives a restart",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const second = yield* Effect.gen(function* () {
+          const clients = yield* Clients.SwitchboardClients;
+          const first = Redacted.value(yield* clients.enroll("t".repeat(64)));
+          expect(yield* clients.authenticate(first)).toEqual(
+            Option.some({ device: "kyle-s-macbook-air" }),
+          );
+          const [listed] = yield* clients.list;
+          expect(listed).toMatchObject({ environmentId: AIR, label: "Kyle’s MacBook Air" });
+          expect(listed?.lastUsedAt).not.toBeNull();
+          const second = Redacted.value(yield* clients.enroll("u".repeat(64)));
+          // Enrolling again revokes the computer's earlier credential.
+          expect(yield* clients.authenticate(first)).toEqual(Option.none());
+          expect(yield* clients.list).toHaveLength(1);
+          return second;
+        }).pipe(Effect.provide(f.layer));
+        const stored = yield* f.fs.readFileString(
+          `${f.secretsDir}/switchboard-account-computers.bin`,
+        );
+        expect(stored).not.toContain(second);
+        const restarted = yield* Clients.SwitchboardClients.pipe(
+          Effect.flatMap((clients) => clients.authenticate(second)),
+          Effect.provide(f.layer),
+        );
+        expect(restarted).toEqual(Option.some({ device: "kyle-s-macbook-air" }));
+      }),
+  );
+
+  it.effect("drops computers the Library stops confirming, and none while it is unreachable", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        const credential = Redacted.value(yield* clients.enroll("t".repeat(64)));
+        f.state.library = "down";
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
+        f.state.library = "refusing";
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
+        expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
+        f.state.library = "up";
+        yield* clients.check;
+        expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
+        f.state.active = [];
+        yield* clients.check;
+        expect(yield* clients.authenticate(credential)).toEqual(Option.none());
+        expect(yield* clients.list).toEqual([]);
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect("issues nothing unless sharing, and never to the hub itself", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.redeemFor = HUB;
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        expect((yield* clients.enroll("t".repeat(64)).pipe(Effect.flip)).reason).toBe("denied");
+        expect(yield* clients.list).toEqual([]);
+      }).pipe(Effect.provide(f.layer));
+      f.state.environment = {};
+      const refused = yield* Clients.SwitchboardClients.pipe(
+        Effect.flatMap((clients) => clients.enroll("t".repeat(64))),
+        Effect.flip,
+        Effect.provide(f.layer),
+      );
+      expect(refused.reason).toBe("disabled");
+    }),
+  );
+});
+
+it.each([
+  ["Kyle’s MacBook Air", "air", "kyle-s-macbook-air"],
+  ["  Dorothy  ", "dorothy", "dorothy"],
+  ["Café Mini", "mini", "cafe-mini"],
+  ["工作站", "7CB920E8-D4FB-B182", "computer-7cb920e8d4fb"],
+  [`${"a".repeat(62)} b`, "x", "a".repeat(62)],
+])("names %s (id %s) as %s in the ledger", (label, id, device) => {
+  expect(Clients.switchboardDevice(label, id)).toBe(device);
+});

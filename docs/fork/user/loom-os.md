@@ -248,11 +248,13 @@ during an outage; live search still needs the app server.
 
 ## AI routing and health
 
-Enable **Route through Switchboard** in each Loom environment's **Settings →
-Providers → Usage providers** after the gateway and credential helper are
-configured. The environment that runs the agent owns the connection. Use
-`loom-os ai claude` or `loom-os ai codex` to route a normal terminal session through
-Switchboard too. Existing app-server AI policies continue to govern Office and Atlas.
+A Loom environment signed in to your Loom account finds the account's shared
+Switchboard and turns on **Route through Switchboard** in **Settings → Providers →
+Usage providers** by itself. See
+[Use another computer in Loom](mini-offload.md) for sharing a hub. The environment
+that runs the agent owns the connection. Once the gateway and credential helper
+are configured, use `loom-os ai claude` or `loom-os ai codex` to route a normal
+terminal session through Switchboard too. Existing app-server AI policies continue to govern Office and Atlas.
 
 Choose **Ask AI** in the launcher or LoomOS menu, or press `Super+Shift+A`.
 The native Agent shortcut (`Super+Shift+Ctrl+A`), agent panel and crash diagnoses

@@ -8,11 +8,14 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as Socket from "effect/socket/Socket";
 import {
   FetchHttpClient,
+  HttpBody,
   HttpClient,
   HttpClientResponse,
   HttpRouter,
@@ -23,12 +26,18 @@ import {
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { upstreamWebSocketConstructor } from "../../device/DeviceHubProxy.ts";
 import { ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentAuth } from "../../auth/EnvironmentAuth.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
+import { SwitchboardAccountRoutes } from "./account-http.ts";
 import { SwitchboardGatewayRoutes } from "./gateway-http.ts";
+import { SWITCHBOARD_GATEWAY_PREFIX } from "./switchboard.ts";
+import { SwitchboardClients } from "./SwitchboardClients.ts";
 import * as Gateway from "./SwitchboardGateway.ts";
 
 const KEY = "a".repeat(64);
+/** A credential the hub issued to one account computer. */
+const COMPUTER = "d".repeat(64);
 const fixture = Effect.gen(function* () {
   const state = {
     key: KEY,
@@ -45,6 +54,12 @@ const fixture = Effect.gen(function* () {
   const dependencies = Layer.mergeAll(
     Layer.succeed(HostProcess.Environment, environment),
     Layer.succeed(HostProcess.Platform, "darwin"),
+    Layer.mock(SwitchboardClients)({
+      authenticate: (credential) =>
+        Effect.succeed(
+          credential === COMPUTER ? Option.some({ device: "kyle-s-macbook-air" }) : Option.none(),
+        ),
+    }),
     Layer.succeed(HostProcess.HomeDirectory, home),
     NodeFileSystem.layer,
     NodePath.layer,
@@ -170,12 +185,52 @@ it.effect("streams personal inference through only the restricted local gateway"
     }
     yield* f.send("/v1/messages?beta=true", "POST", null, { "x-api-key": KEY });
     expect(f.requests.at(-1)?.headers["x-api-key"]).toBe(KEY);
-    expect(f.requests.at(-1)?.headers.authorization).toBeUndefined();
+    expect(f.requests.at(-1)?.headers.authorization).toBe("Bearer " + KEY);
     for (const path of ["/v1/messages?beta=true", "/v1/messages/count_tokens?beta=true"]) {
       yield* f.send(path, "POST", KEY, { "x-api-key": KEY });
       expect(f.requests.at(-1)?.headers.authorization).toBe("Bearer " + KEY);
       expect(f.requests.at(-1)?.headers["x-api-key"]).toBe(KEY);
     }
+  }),
+);
+
+it.effect("sends an account computer's requests with the hub key and its ledger name", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.send("/v1/responses", "POST", COMPUTER, { "x-switchboard-device": "spoofed" });
+    expect(f.requests.at(-1)?.headers.authorization).toBe("Bearer " + KEY);
+    expect(f.requests.at(-1)?.headers["x-switchboard-device"]).toBe("kyle-s-macbook-air");
+    yield* f.send("/v1/messages?beta=true", "POST", COMPUTER, { "x-api-key": COMPUTER });
+    expect(f.requests.at(-1)?.headers["x-api-key"]).toBe(KEY);
+    // The shared key still works during migration, and names no computer.
+    yield* f.send("/v1/responses", "POST", KEY, { "x-switchboard-device": "spoofed" });
+    expect(f.requests.at(-1)?.headers["x-switchboard-device"]).toBeUndefined();
+  }),
+);
+
+it.effect("forwards the controller reads a routed computer makes, without the hub key", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.send("/controller/api/v1/availability", "GET", COMPUTER);
+    yield* f.send("/controller/api/v1/service-tier?session=thread-1&since=42", "GET", COMPUTER);
+    expect(f.requests.map((request) => request.url)).toEqual([
+      "http://127.0.0.1:8318/api/v1/availability",
+      "http://127.0.0.1:8318/api/v1/service-tier?session=thread-1&since=42",
+    ]);
+    for (const request of f.requests) {
+      expect(request.headers.authorization).toBeUndefined();
+      expect(request.headers["x-switchboard-device"]).toBeUndefined();
+    }
+    for (const path of [
+      "/controller/api/v1/accounts",
+      "/controller/api/v1/service-tier?session=a&since=1&extra=1",
+      "/controller/api/v1/availability?x=1",
+    ])
+      expect((yield* f.send(path, "GET", COMPUTER).pipe(Effect.flip)).reason).toBe("path");
+    expect(
+      (yield* f.send("/controller/api/v1/availability", "GET", "b".repeat(64)).pipe(Effect.flip))
+        .reason,
+    ).toBe("authentication");
   }),
 );
 
@@ -270,15 +325,19 @@ it.effect("carries Responses text and binary WebSocket frames through the public
     });
     const runtime = Layer.succeed(
       ForkRuntime,
-      Context.make(
-        Gateway.SwitchboardGateway,
-        f.gateway,
+      Context.make(Gateway.SwitchboardGateway, f.gateway).pipe(
+        Context.add(SwitchboardClients, {
+          enroll: () => Effect.succeed(Redacted.make(COMPUTER)),
+        } as unknown as SwitchboardClients["Service"]),
       ) as unknown as Context.Context<ForkServices>,
     );
     const services = yield* Layer.build(
-      HttpRouter.serve(SwitchboardGatewayRoutes.pipe(HttpRouter.provideRequest(runtime)), {
-        disableListenLog: true,
-      }).pipe(Layer.provideMerge(NodeHttpServer.layerTest)),
+      HttpRouter.serve(
+        Layer.merge(SwitchboardGatewayRoutes, SwitchboardAccountRoutes).pipe(
+          HttpRouter.provideRequest(Layer.merge(runtime, Layer.mock(EnvironmentAuth)({}))),
+        ),
+        { disableListenLog: true },
+      ).pipe(Layer.provideMerge(NodeHttpServer.layerTest)),
     );
     const origin = HttpServer.formatAddress(
       Context.get(services, HttpServer.HttpServer).address,
@@ -290,17 +349,34 @@ it.effect("carries Responses text and binary WebSocket frames through the public
       ["/v1/models", KEY, 200],
     ] as const) {
       const result = yield* http.get(
-        `${origin.replace(/^ws/u, "http")}${Gateway.SWITCHBOARD_GATEWAY_PREFIX}${path}`,
+        `${origin.replace(/^ws/u, "http")}${SWITCHBOARD_GATEWAY_PREFIX}${path}`,
         {
           headers: { authorization: "Bearer " + key },
         },
       );
       expect(result.status).toBe(expected);
+      // Account computers tell the gateway's own refusals from the hub's by this header.
+      expect(result.headers["x-loom-switchboard"]).toBe(
+        expected === 401 ? "authentication" : expected === 404 ? "path" : undefined,
+      );
       yield* result.arrayBuffer;
+    }
+    // The enroll route answers before the gateway's catch-all, with no client credential.
+    for (const [body, expected] of [
+      [{ ticket: "a".repeat(64) }, 200],
+      [{ ticket: "short" }, 400],
+    ] as const) {
+      const enrolled = yield* http.post(
+        `${origin.replace(/^ws/u, "http")}${SWITCHBOARD_GATEWAY_PREFIX}/enroll`,
+        { body: HttpBody.jsonUnsafe(body) },
+      );
+      expect(enrolled.status).toBe(expected);
+      if (expected === 200) expect(yield* enrolled.json).toEqual({ credential: COMPUTER });
+      else yield* enrolled.arrayBuffer;
     }
     const client = yield* Effect.acquireRelease(
       Effect.sync(() => {
-        const socket = makeSocket(`${origin}${Gateway.SWITCHBOARD_GATEWAY_PREFIX}/v1/responses`, {
+        const socket = makeSocket(`${origin}${SWITCHBOARD_GATEWAY_PREFIX}/v1/responses`, {
           headers: {
             authorization: "Bearer " + KEY,
             cookie: "private",

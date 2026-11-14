@@ -372,6 +372,10 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [P.watch]: AuthOrchestrationReadScope,
   [FORK_WS_METHODS.coreInfo]: AuthOrchestrationReadScope,
   [FORK_WS_METHODS.limits]: AuthOrchestrationReadScope,
+  [FORK_WS_METHODS.route]: AuthOrchestrationReadScope,
+  // Both change which credential routed launches use, like the routing switch beside them.
+  [FORK_WS_METHODS.reconnect]: AuthSettingsWriteScope,
+  [FORK_WS_METHODS.revokeComputer]: AuthSettingsWriteScope,
   [M.editorAction]: AuthOrchestrationOperateScope,
   [M.completeEditorAction]: AuthOrchestrationOperateScope,
   [M.editorEvents]: AuthOrchestrationReadScope,

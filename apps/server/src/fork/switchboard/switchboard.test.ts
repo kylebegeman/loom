@@ -16,6 +16,8 @@ import { codexAppServerArgs, codexExecLaunchArgs } from "../../provider/codexLau
 import {
   resolveSwitchboardConfiguration,
   resolveSwitchboardController,
+  resolveSwitchboardControllerRoute,
+  setSwitchboardAccountRoute,
   setSwitchboardEnabled,
   setSwitchboardEnvironment,
   SwitchboardConfigurationError,
@@ -437,6 +439,72 @@ describe("Switchboard environment configuration", () => {
     }
     setSwitchboardEnvironment({ LOOM_SWITCHBOARD_URL: "not a url" }, "linux");
     expect(switchboardUsageController("https://hub.example.test")).toBeNull();
+  });
+
+  it("routes through the account hub unless the environment names another Switchboard", () => {
+    const account = {
+      url: "https://dorothy.example.test/api/loom/switchboard",
+      keyCommand: { command: "/bin/cat", args: ["/secrets/switchboard-account-credential.bin"] },
+      hubOrigins: ["https://dorothy.example.test", "http://dorothy.tail.test:3773"],
+    };
+    const own = account.keyCommand;
+    expect(resolveSwitchboardConfiguration({}, "darwin", account)).toEqual({
+      url: account.url,
+      keyCommand: own,
+      source: "account",
+    });
+    // A URL set by hand for the same hub, by any of its routes, uses this computer's own key.
+    for (const url of [
+      "https://dorothy.example.test/api/loom/switchboard/",
+      "http://dorothy.tail.test:3773/api/loom/switchboard",
+    ])
+      expect(
+        resolveSwitchboardConfiguration({ LOOM_SWITCHBOARD_URL: url }, "darwin", account),
+      ).toMatchObject({ keyCommand: own, source: "account" });
+    for (const environment of [
+      { LOOM_SWITCHBOARD_URL: "http://127.0.0.1:8317" },
+      { LOOM_SWITCHBOARD_URL: "https://dorothy.example.test" },
+      { LOOM_SWITCHBOARD_KEY_HELPER: "/opt/key-helper" },
+    ])
+      expect(resolveSwitchboardConfiguration(environment, "darwin", account).source).toBe(
+        "environment",
+      );
+  });
+
+  it("reads an account hub's controller through its gateway, unless one is configured", () => {
+    setSwitchboardAccountRoute({
+      url: "https://dorothy.example.test/api/loom/switchboard",
+      keyCommand: { command: "/bin/cat", args: ["/secrets/credential.bin"] },
+      hubOrigins: ["https://dorothy.example.test"],
+    });
+    try {
+      const gateway = {
+        url: "https://dorothy.example.test/api/loom/switchboard/controller",
+        keyCommand: { command: "/bin/cat", args: ["/secrets/credential.bin"] },
+      };
+      expect(resolveSwitchboardControllerRoute({}, "darwin")).toEqual(gateway);
+      // A computer set up by hand for the shared gateway had no controller route, so it set "".
+      expect(
+        resolveSwitchboardControllerRoute(
+          {
+            LOOM_SWITCHBOARD_URL: "https://dorothy.example.test/api/loom/switchboard",
+            LOOM_SWITCHBOARD_CONTROLLER_URL: "",
+          },
+          "darwin",
+        ),
+      ).toEqual(gateway);
+      expect(
+        resolveSwitchboardControllerRoute(
+          { LOOM_SWITCHBOARD_CONTROLLER_URL: "https://controller.example.test" },
+          "darwin",
+        ),
+      ).toEqual({ url: "https://controller.example.test" });
+    } finally {
+      setSwitchboardAccountRoute(undefined);
+    }
+    expect(resolveSwitchboardControllerRoute({}, "darwin")).toEqual({
+      url: "http://127.0.0.1:8318",
+    });
   });
 
   it.each(["secret-tool lookup service switchboard", "/opt/key\nhelper", "", "~/bin/key-helper"])(

@@ -290,6 +290,7 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       ["POST", "/api/loom/switchboard/v1/chat/completions"],
       ["POST", "/api/loom/switchboard/v1/messages?beta=true"],
       ["POST", "/api/loom/switchboard/v1/messages/count_tokens?beta=true"],
+      ["GET", "/api/loom/switchboard/controller/api/v1/service-tier?session=s&since=1"],
     ] as const) {
       expect(reachAllowsRequest(method, path)).toBe(true);
     }
@@ -329,6 +330,7 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       "/api/loom/switchboard/v1/models/",
       "/api/loom/switchboard/codex/models/",
       "/api/loom/switchboard/v1/responses/other",
+      "/api/loom/switchboard/controller/api/v1/accounts",
     ]) {
       expect(reachAllowsRequest("GET", path)).toBe(false);
     }

@@ -13,8 +13,9 @@ import { HttpClient } from "effect/http";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import {
   readSwitchboardCredential,
-  resolveSwitchboardController,
+  resolveSwitchboardControllerRoute,
   switchboardCatalogSource,
+  switchboardControllerHeaders,
   switchboardCodexThreadOptions,
   type SwitchboardKeyCommand,
 } from "./switchboard.ts";
@@ -115,6 +116,8 @@ const Decision = Schema.Struct({
 export const makeSwitchboardTierReader = Effect.fn("Switchboard.makeTierReader")(function* () {
   const http = yield* HttpClient.HttpClient;
   const environment = yield* HostProcess.Environment;
+  const platform = yield* HostProcess.Platform;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return Effect.fn("Switchboard.readServiceTier")(
     function* (session: string, since: number, selection: ModelSelection) {
       if (
@@ -123,12 +126,17 @@ export const makeSwitchboardTierReader = Effect.fn("Switchboard.makeTierReader")
       )
         return null;
       const controller = yield* Effect.try({
-        try: () => resolveSwitchboardController(environment),
+        try: () => resolveSwitchboardControllerRoute(environment, platform),
         catch: (cause) => new ServiceTierOperationError({ cause }),
       });
       if (!controller) return null;
+      const headers = yield* switchboardControllerHeaders(controller, environment).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      if (Option.isNone(headers)) return null;
       const response = yield* http.get(
-        `${controller}/api/v1/service-tier?session=${encodeURIComponent(session)}&since=${since}`,
+        `${controller.url}/api/v1/service-tier?session=${encodeURIComponent(session)}&since=${since}`,
+        { headers: headers.value },
       );
       if (response.status !== 200) return null;
       const { decision } = yield* response.json.pipe(
