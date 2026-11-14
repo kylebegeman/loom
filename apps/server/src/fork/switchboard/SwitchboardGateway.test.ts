@@ -7,6 +7,8 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -48,6 +50,10 @@ const fixture = Effect.gen(function* () {
     socketConstructor: undefined as Socket.WebSocketConstructor["Service"] | undefined,
     /** Completes when the account computer's credential stops working. */
     ended: Deferred.makeUnsafe<void>(),
+    /** Completes once Switchboard receives a request; `hold` then delays its answer. */
+    executing: Deferred.makeUnsafe<void>(),
+    hold: undefined as Deferred.Deferred<void> | undefined,
+    body: undefined as ReadableStream<Uint8Array> | undefined,
   };
   const environment: NodeJS.ProcessEnv = { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" };
   const fs = yield* FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer));
@@ -115,9 +121,11 @@ const fixture = Effect.gen(function* () {
             headers: request.headers,
             body: [...chunks].map((part) => new TextDecoder().decode(part)).join(""),
           });
+          yield* Deferred.succeed(state.executing, undefined);
+          if (state.hold) yield* Deferred.await(state.hold);
           return HttpClientResponse.fromWeb(
             request,
-            new Response(Uint8Array.of(0, 255, 3), {
+            new Response(state.body ?? Uint8Array.of(0, 255, 3), {
               status: state.status,
               headers: {
                 "content-type": "text/event-stream",
@@ -162,6 +170,8 @@ const fixture = Effect.gen(function* () {
 it.effect("streams personal inference through only the restricted local gateway", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
+    // The server reads a response in its request's context, as this does.
+    const context = yield* Effect.context<never>();
     const response = yield* f.send("/v1/responses", "POST");
     expect(f.requests).toHaveLength(1);
     expect(f.requests[0]).toMatchObject({
@@ -178,7 +188,7 @@ it.effect("streams personal inference through only the restricted local gateway"
     expect(response.headers["cf-access-jwt-assertion"]).toBeUndefined();
     expect([
       ...new Uint8Array(
-        yield* Effect.promise(() => HttpServerResponse.toWeb(response).arrayBuffer()),
+        yield* Effect.promise(() => HttpServerResponse.toWeb(response, { context }).arrayBuffer()),
       ),
     ]).toEqual([0, 255, 3]);
     for (const path of [
@@ -293,6 +303,31 @@ it.effect("refuses opt-out, foreign credentials, protected routes, and redirecte
     expect(f.requests).toHaveLength(2);
   }),
 );
+
+/** Reads a streamed gateway response in the background, noting its first chunk and its end. */
+const readBody = (response: HttpServerResponse.HttpServerResponse) =>
+  Effect.gen(function* () {
+    if (response.body._tag !== "Stream") throw new Error("Expected a streamed body");
+    const first = yield* Deferred.make<void>();
+    const chunks: Array<string> = [];
+    const fiber = yield* response.body.stream.pipe(
+      Stream.runForEach((chunk) =>
+        Effect.sync(() => chunks.push(new TextDecoder().decode(chunk))).pipe(
+          Effect.andThen(Deferred.succeed(first, undefined)),
+        ),
+      ),
+      Effect.exit,
+      Effect.forkChild,
+    );
+    return { first, chunks, fiber };
+  });
+
+/** An upstream SSE body that stays open, and sends `data` once. */
+const openUpstream = (f: Effect.Success<typeof fixture>, data: string) => {
+  const upstream = new TransformStream<Uint8Array, Uint8Array>();
+  f.state.body = upstream.readable;
+  return () => void upstream.writable.getWriter().write(new TextEncoder().encode(data));
+};
 
 /** Serves the gateway's HTTP routes in front of a Responses WebSocket that greets and echoes. */
 const serveSockets = (f: Effect.Success<typeof fixture>) =>
@@ -452,13 +487,44 @@ it.effect("ends an account computer's socket once its credential stops working",
   }),
 );
 
-it.effect("ends every gateway socket after an hour", () =>
+it.effect(
+  "fails an account computer's request still waiting once its credential stops working",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.hold = yield* Deferred.make<void>();
+      const pending = yield* f.send("/v1/responses", "POST", COMPUTER).pipe(Effect.forkChild);
+      yield* Deferred.await(f.state.executing);
+      yield* Deferred.succeed(f.state.ended, undefined);
+      expect((yield* Fiber.join(pending).pipe(Effect.flip)).reason).toBe("unavailable");
+    }),
+);
+
+it.effect("cuts an account computer's response stream once its credential stops working", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const send = openUpstream(f, "data: one\n\n");
+    const reading = yield* readBody(yield* f.send("/v1/responses", "POST", COMPUTER));
+    send();
+    yield* Deferred.await(reading.first);
+    yield* Deferred.succeed(f.state.ended, undefined);
+    expect(Exit.isFailure(yield* Fiber.join(reading.fiber))).toBe(true);
+    expect(reading.chunks).toEqual(["data: one\n\n"]);
+  }),
+);
+
+it.effect("ends every gateway socket and response stream after an hour", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     const bridge = yield* serveSockets(f);
     const socket = yield* openSocket(bridge, KEY);
+    const send = openUpstream(f, "data: one\n\n");
+    const reading = yield* readBody(yield* f.send("/v1/responses", "POST", KEY));
+    send();
+    yield* Deferred.await(reading.first);
     yield* TestClock.adjust("1 hour");
     yield* Effect.promise(() => Promise.all([socket.closed, bridge.targetClosed]));
+    expect(Exit.isFailure(yield* Fiber.join(reading.fiber))).toBe(true);
   }),
 );
 
