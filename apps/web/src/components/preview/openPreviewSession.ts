@@ -1,9 +1,11 @@
 import type {
   EnvironmentId,
+  PreviewAppearancePreference,
   PreviewOpenInput,
   PreviewRuntime,
   PreviewSessionSnapshot,
   PreviewViewportSetting,
+  PreviewZoomFactor,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
@@ -25,6 +27,8 @@ interface OpenPreviewSessionInput<E> {
   url?: string;
   viewport?: PreviewViewportSetting;
   profileId?: string;
+  zoomFactor?: PreviewZoomFactor;
+  colorScheme?: PreviewAppearancePreference;
   runtime?: PreviewRuntime;
 }
 
@@ -51,7 +55,11 @@ export async function openPreviewSession<E>(
       profileId: input.profileId ?? defaults.profileId,
       ...(runtime === undefined || runtime === "desktop"
         ? {}
-        : { runtime, zoomFactor: defaults.zoomFactor, colorScheme: defaults.appearance }),
+        : {
+            runtime,
+            zoomFactor: input.zoomFactor ?? defaults.zoomFactor,
+            colorScheme: input.colorScheme ?? defaults.appearance,
+          }),
     },
   });
   if (result._tag === "Failure") {

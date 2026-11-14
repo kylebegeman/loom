@@ -14,6 +14,7 @@ import {
   type PreviewAutomationSelectInput,
   type PreviewAutomationSelectResult,
   type PreviewAutomationSnapshot,
+  type PreviewAutomationSnapshotStage,
   type PreviewAutomationTypeInput,
   type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
@@ -277,12 +278,35 @@ const pageChanged = () =>
     message: "The page changed while capturing its snapshot. Take another snapshot.",
   });
 
-const tooBusy = () =>
+type SnapshotStage = typeof PreviewAutomationSnapshotStage.Type;
+
+/**
+ * Running stages are counted, since a retry can overlap the previous attempt's unanswered
+ * screenshot. A stage whose own timeout fired has stopped running but is still the cause.
+ */
+interface SnapshotStages {
+  readonly running: Map<SnapshotStage, number>;
+  readonly timedOut: Set<SnapshotStage>;
+}
+
+const snapshotTimedOut = (stages?: SnapshotStages) =>
   new ServerBrowserOperationError({
     tag: "PreviewAutomationTimeoutError",
-    message:
-      "The page was too busy to capture a snapshot in time. Wait for it to settle and take another snapshot.",
+    message: `Snapshot capture timed out after ${SNAPSHOT_TIMEOUT_MS}ms. Try the snapshot again.`,
+    detail: {
+      timeoutMs: SNAPSHOT_TIMEOUT_MS,
+      pendingStages: stages ? [...new Set([...stages.timedOut, ...stages.running.keys()])] : [],
+    },
   });
+
+const frameUnanswered = () =>
+  new ServerBrowserOperationError({
+    tag: "PreviewAutomationTimeoutError",
+    message: `A frame on the page didn't answer within ${FRAME_ANSWER_MS}ms, so its content couldn't be checked for hidden values. Try the snapshot again.`,
+    detail: { timeoutMs: FRAME_ANSWER_MS, pendingStages: ["frames"] },
+  });
+
+const isTimeout = (cause: unknown) => cause instanceof Error && cause.name === "TimeoutError";
 
 const VALUE_TOO_LONG = "A password field holds a value too long to hide, so no snapshot was taken.";
 
@@ -611,27 +635,50 @@ const renderingOf = async (input: SnapshotInput) => {
 const capture = async (
   input: SnapshotInput,
   deadline: number,
+  stages: SnapshotStages,
 ): Promise<PreviewAutomationSnapshot> => {
+  const { running } = stages;
+  const track = async <A>(stage: SnapshotStage, operation: () => Promise<A>) => {
+    running.set(stage, (running.get(stage) ?? 0) + 1);
+    try {
+      const result = await operation();
+      stages.timedOut.delete(stage);
+      return result;
+    } catch (cause) {
+      if (isTimeout(cause)) stages.timedOut.add(stage);
+      throw cause;
+    } finally {
+      const count = (running.get(stage) ?? 1) - 1;
+      if (count === 0) running.delete(stage);
+      else running.set(stage, count);
+    }
+  };
   const state = refsFor(input.page);
   invalidateRefs(input.page);
   const generation = state.generation;
-  const { readers, read } = await openReaders(input.page, input.cdp);
-  const before = await read();
+  const { readers, read } = await track("frames", () => openReaders(input.page, input.cdp));
+  const before = await track("frames", () => read());
   // Bracket the tree with value reads to detect changes; await tree completion before retrying failed captures.
-  const pageState = input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
-    Pick<
-      PreviewAutomationSnapshot,
-      "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-    >
-  >;
+  const pageState = track(
+    "page state",
+    () =>
+      input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
+        Pick<
+          PreviewAutomationSnapshot,
+          "url" | "title" | "loading" | "visibleText" | "interactiveElements"
+        >
+      >,
+  );
   void pageState.catch(constVoid);
   // Leaves time for the second read; a frame that never loads holds the tree until then.
-  const tree = await input.page.ariaSnapshot({
-    mode: "ai",
-    boxes: true,
-    timeout: Math.max(1, deadline - Date.now() - 2_000),
-  });
-  const after = await read(before);
+  const tree = await track("accessibility tree", () =>
+    input.page.ariaSnapshot({
+      mode: "ai",
+      boxes: true,
+      timeout: Math.max(1, deadline - Date.now() - 2_000),
+    }),
+  );
+  const after = await track("frames", () => read(before));
   // A value that changed meanwhile may be in the tree under neither reading.
   if (after.some((values, i) => values && JSON.stringify(values) !== JSON.stringify(before[i])))
     throw pageChanged();
@@ -640,11 +687,13 @@ const capture = async (
   const unread = readers.flatMap((reader, i) => (after[i] ? [] : reader.frames));
   const filled = /^\s*- iframe (?:\[active\] )?\[ref=(\S+?)\].*:$/gm;
   for (const [, ref] of unread.length ? tree.matchAll(filled) : []) {
-    const iframe = await input.page.locator(`aria-ref=${ref}`).elementHandle({ timeout: 2_000 });
+    const iframe = await track("frames", () =>
+      input.page.locator(`aria-ref=${ref}`).elementHandle({ timeout: 2_000 }),
+    );
     if (!iframe) throw pageChanged();
-    const frame = await iframe.contentFrame();
+    const frame = await track("frames", () => iframe.contentFrame());
     void iframe.dispose().catch(constVoid);
-    if (frame && unread.includes(frame)) throw tooBusy();
+    if (frame && unread.includes(frame)) throw frameUnanswered();
   }
   const page = await pageState;
   if (state.generation !== generation) throw pageChanged();
@@ -662,12 +711,16 @@ const capture = async (
   let screenshot: PreviewAutomationSnapshot["screenshot"];
   let fullScreenshot: PreviewAutomationSnapshot["fullScreenshot"];
   if (input.includeImage !== false || input.fullScreenshot === true) {
-    const { renderScale, viewport } = await renderingOf(input);
+    const { renderScale, viewport } = await track("metrics", () => renderingOf(input));
     // A late metrics reply must not begin a capture after the snapshot deadline.
-    if (Date.now() >= deadline) throw tooBusy();
+    if (Date.now() >= deadline) throw snapshotTimedOut();
     const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
-    const full = await captureViewport(input.cdp, { format: "png" });
-    const data = scale < 1 ? await shrinkPng(input.cdp, full, scale) : full;
+    const { full, data } = await track("screenshot", () =>
+      captureViewport(input.cdp, { format: "png" }).then(async (full) => ({
+        full,
+        data: scale < 1 ? await shrinkPng(input.cdp, full, scale) : full,
+      })),
+    );
     screenshot = { mimeType: "image/png", data, ...pngSize(data) };
     if (input.fullScreenshot && scale < 1) fullScreenshot = { data: full, ...pngSize(full) };
   }
@@ -691,28 +744,29 @@ const snapshotTurns = new WeakMap<Page, number>();
 
 export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationSnapshot> => {
   const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
+  const stages: SnapshotStages = { running: new Map(), timedOut: new Set() };
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Image work keeps the host's capture lock until CDP settles; the host bounds the request.
   const expired =
     input.includeImage === false && input.fullScreenshot !== true
       ? new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(tooBusy()), SNAPSHOT_TIMEOUT_MS);
+          timer = setTimeout(() => reject(snapshotTimedOut(stages)), SNAPSHOT_TIMEOUT_MS);
         })
       : undefined;
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
   // Retry only before the deadline and the next snapshot, whose refs a later retry would revoke.
-  const captured = capture(input, deadline).catch((cause: unknown) =>
+  const captured = capture(input, deadline, stages).catch((cause: unknown) =>
     Date.now() < deadline &&
     snapshotTurns.get(input.page) === turn &&
     !(cause instanceof Error && cause.message === VALUE_TOO_LONG)
-      ? capture(input, deadline)
+      ? capture(input, deadline, stages)
       : Promise.reject(cause),
   );
   try {
     return await (expired ? Promise.race([captured, expired]) : captured);
   } catch (cause) {
-    throw cause instanceof Error && cause.name === "TimeoutError" ? tooBusy() : cause;
+    throw isTimeout(cause) ? snapshotTimedOut(stages) : cause;
   } finally {
     clearTimeout(timer);
   }

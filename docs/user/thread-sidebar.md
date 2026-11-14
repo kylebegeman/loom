@@ -331,8 +331,8 @@ thread** from its long-press menu on mobile.
 keeps the provider's explanation. Retry after the limit resets, or switch to
 another provider instance.
 Press **Resume** in an empty composer to continue a limited or interrupted turn
-manually. Do this when the provider reports no reset time, because nothing
-continues the turn on its own.
+manually when the provider supports native continuation, or send a message to continue.
+Do this when the provider reports no reset time, because nothing continues the turn on its own.
 **Resume** also continues a failed turn, and on mobile **Resume** or **Retry**
 above the composer does the same. When a failure offers neither, fix the cause
 shown in the conversation, then send a new message. <!-- fork: failed-run-retry -->
