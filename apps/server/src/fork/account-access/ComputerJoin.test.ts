@@ -21,7 +21,9 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { DirectoryReporter } from "../directory/DirectoryReporter.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
+import { ReachService } from "../reach/ReachService.ts";
 import { AccountEnrollment } from "./AccountEnrollment.ts";
 import * as Join from "./ComputerJoin.ts";
 
@@ -42,14 +44,41 @@ const fixture = Effect.gen(function* () {
     loseInstallReply = true,
     approved = false,
     wrongLibrary = false,
-    revoked = false;
+    revoked = false,
+    reporting: "off" | "reporting" = "off",
+    remote: { state: "starting" | "connected" | "error"; message: string | null } = {
+      state: "starting",
+      message: null,
+    };
   const open = Join.ComputerJoin.pipe(
     Effect.provide(
       Join.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(SOURCE) }),
+            Layer.mock(DirectoryReporter)({
+              status: Effect.sync(() => ({ state: reporting, lastReportedAt: null })),
+            }),
+            Layer.mock(ReachService)({
+              guardState: () => ({ hostname: null, serving: false }),
+              ownPorts: () => [],
+              status: Effect.sync(() => ({
+                ...remote,
+                enabled: true,
+                blocked: null,
+                url: remote.state === "connected" ? "https://new-server-loom.example.test/" : null,
+                warnings: [],
+                prepared: null,
+              })),
+            }),
             Layer.mock(LibraryConnectionService)({
+              status: Effect.succeed({
+                state: "ready",
+                expiresAt: null,
+                renewsAt: null,
+                renewal: "automatic",
+                repair: null,
+              }),
               current: Effect.succeed({
                 kind: "remote",
                 origin: URL,
@@ -198,6 +227,12 @@ const fixture = Effect.gen(function* () {
     changeLibrary: () => {
       wrongLibrary = true;
     },
+    report: () => {
+      reporting = "reporting";
+    },
+    setRemote: (next: typeof remote) => {
+      remote = next;
+    },
   };
 });
 const run = <A, E, R>(program: Effect.Effect<A, E, R>) =>
@@ -278,4 +313,38 @@ it.effect(
         expect(f.installs).toEqual([]);
       }),
     ),
+);
+
+it.effect("reports what a joined computer still needs until it is ready for agents", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const service = yield* f.open;
+      yield* service.start({ libraryUrl: URL, restart: false }).pipe(Effect.result);
+      yield* service.start({ libraryUrl: URL, restart: false });
+      expect((yield* service.readiness).waitingFor).toBe("approval from a signed-in device");
+      f.approve();
+      yield* service.step.pipe(Effect.result);
+      expect(yield* service.step).toBe("complete");
+      expect(yield* service.readiness).toMatchObject({
+        joined: true,
+        history: "ready",
+        waitingFor: "its entry in your computer list",
+      });
+      f.report();
+      f.setRemote({ state: "error", message: "cloudflared is not installed." });
+      expect((yield* service.readiness).waitingFor).toBe(
+        "remote access: cloudflared is not installed.",
+      );
+      f.setRemote({ state: "connected", message: null });
+      expect(yield* service.readiness).toEqual({
+        joined: true,
+        history: "ready",
+        directory: "reporting",
+        remote: "connected",
+        url: "https://new-server-loom.example.test/",
+        waitingFor: null,
+      });
+    }),
+  ),
 );

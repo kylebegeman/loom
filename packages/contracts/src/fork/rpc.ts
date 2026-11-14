@@ -1,4 +1,4 @@
-import { AccountEnrollmentRpcGroup } from "./account-access.ts";
+import { ACCOUNT_ENROLLMENT_WS_METHODS, AccountEnrollmentRpcGroup } from "./account-access.ts";
 import { DevApiLibraryRpcGroup } from "./api-library.ts";
 import { DevEnvironmentRpcGroup, DEV_ENVIRONMENT_WS_METHODS } from "./browser-dev-tools.ts";
 import { UpstreamSupervisorRpcGroup } from "./upstream-supervisor.ts";
@@ -187,7 +187,8 @@ export type ForkSubscriptionRpcTag =
   | typeof BOTS_WS_METHODS.watchBadgePreferences
   | typeof BOTS_BATCH_WS_METHODS.watchBatches
   | typeof BOTS_TRIGGER_WS_METHODS.watchTriggers
-  | typeof BOTS_PIPELINE_WS_METHODS.watchPipelines;
+  | typeof BOTS_PIPELINE_WS_METHODS.watchPipelines
+  | typeof ACCOUNT_ENROLLMENT_WS_METHODS.joinPrompts;
 export type ForkStreamCommandRpcTag =
   | typeof APPLE_BUILD_TOOLING_WS_METHODS.tailLog
   | typeof DEVICE_QA_WS_METHODS.runEvents;

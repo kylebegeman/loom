@@ -1,6 +1,7 @@
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { DirectoryReportRequest } from "./directory.ts";
+import { DirectoryReportRequest, DirectoryReporting, LibrarySignInStatus } from "./directory.ts";
+import { ReachState } from "./reach.ts";
 import { LibraryManagementDelegation, LibraryError } from "./project-library.ts";
 import { EnvironmentId, AuthSessionId, IsoDateTime } from "../baseSchemas.ts";
 import {
@@ -131,6 +132,43 @@ export const ComputerJoinPrompt = Schema.Struct({
   libraryUrl: Schema.String,
 });
 export const ComputerJoinProgress = Schema.Literals(["pending", "denied", "complete"]);
+
+/** Owner devices hear about joining computers and answer with the code the terminal shows. */
+export const ACCOUNT_JOIN_PROMPTS_FEATURE = "account-join-prompts";
+export const ACCOUNT_JOIN_PROMPT_CHOICES = 3;
+/**
+ * A computer waiting to join, as an owner device shows it. The terminal's code is one of
+ * `choices`, unmarked, so approving needs the terminal in view.
+ */
+export const AccountJoinPrompt = Schema.Struct({
+  requestId: AccountJoinReview.fields.requestId,
+  environmentId: EnvironmentId,
+  label: AccountJoinReview.fields.label,
+  keyFingerprint: Schema.String,
+  expiresAt: Schema.Number,
+  choices: Schema.Array(AccountJoinCode).check(Schema.isMaxLength(ACCOUNT_JOIN_PROMPT_CHOICES)),
+});
+export type AccountJoinPrompt = typeof AccountJoinPrompt.Type;
+/** `code: null` declines. A code other than the terminal's also declines the request. */
+export const AccountJoinResponse = Schema.Struct({
+  requestId: AccountJoinReview.fields.requestId,
+  code: Schema.NullOr(AccountJoinCode),
+});
+export type AccountJoinResponse = typeof AccountJoinResponse.Type;
+
+/** Answered by the joining computer's own server, for `loom join` to wait on. */
+export const ACCOUNT_JOIN_STATUS = "/api/loom/account/join/status";
+export const ComputerJoinReadiness = Schema.Struct({
+  joined: Schema.Boolean,
+  history: LibrarySignInStatus.fields.state,
+  directory: DirectoryReporting.fields.state,
+  remote: ReachState,
+  url: Schema.NullOr(Schema.String),
+  /** The first thing still missing, in words, or null once everything is ready. */
+  waitingFor: Schema.NullOr(Schema.String),
+});
+export type ComputerJoinReadiness = typeof ComputerJoinReadiness.Type;
+
 export const ACCOUNT_ENROLLMENT_WS_METHODS = {
   prepare: "loom.account.prepareEnrollment",
   approve: "loom.account.approveEnrollment",
@@ -141,6 +179,8 @@ export const ACCOUNT_ENROLLMENT_WS_METHODS = {
   decideJoin: "loom.account.decideJoin",
   computers: "loom.account.computers",
   removeComputer: "loom.account.removeComputer",
+  joinPrompts: "loom.account.joinPrompts",
+  respondJoin: "loom.account.respondJoin",
 } as const;
 export const AccountEnrollmentRpcGroup = RpcGroup.make(
   Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.computers, {
@@ -170,6 +210,17 @@ export const AccountEnrollmentRpcGroup = RpcGroup.make(
   }),
   Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.decideJoin, {
     payload: Schema.Struct({ code: AccountJoinCode, approve: Schema.Boolean }),
+    success: AccountJoinReview,
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.joinPrompts, {
+    payload: Schema.Struct({}),
+    success: Schema.Array(AccountJoinPrompt),
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+    stream: true,
+  }),
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.respondJoin, {
+    payload: AccountJoinResponse,
     success: AccountJoinReview,
     error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
   }),

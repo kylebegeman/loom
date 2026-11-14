@@ -62,6 +62,7 @@ const setup = Effect.fn("test.setup")(function* (topics?: ReadonlyArray<typeof D
       }),
     alerts: true,
     alert: () => Effect.die("unused"),
+    joinPrompt: () => Effect.die("unused"),
   });
   // The real readiness service, on the Library itself.
   const readiness = yield* LibraryPushReadiness.LibraryPushReadinessService.pipe(

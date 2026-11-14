@@ -65,6 +65,7 @@ const setup = (scopes: readonly AuthEnvironmentScope[]) => {
       test: (caller) => record(PUSH.test, caller, { deliveries: [] }),
       alerts: false,
       alert: () => Effect.die("unused"),
+      joinPrompt: () => Effect.die("unused"),
     }),
   );
   const session: AuthenticatedSession = {

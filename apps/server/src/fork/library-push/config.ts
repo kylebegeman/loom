@@ -130,6 +130,8 @@ export type LibraryPushConfig =
       readonly allowedSubjects: ReadonlyArray<string>;
       /** Who gets agent alerts; null while they are off. Never empty. */
       readonly alertRecipients: ReadonlyArray<string> | null;
+      /** Who is asked to approve a joining computer, with or without agent alerts. */
+      readonly joinRecipients: ReadonlyArray<string>;
     };
 
 /** Read once when the service starts; changing any of these takes a restart. */
@@ -148,5 +150,6 @@ export const libraryPushConfig = (env: Env): LibraryPushConfig => {
     issuer: env.LOOM_IDENTITY_ISSUER!.trim(),
     allowedSubjects: subjectList(env.LOOM_IDENTITY_ALLOWED_SUBJECTS),
     alertRecipients: libraryPushActivityAdvertised(env) ? libraryPushAlertRecipients(env) : null,
+    joinRecipients: libraryPushAlertRecipients(env),
   };
 };

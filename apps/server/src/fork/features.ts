@@ -4,6 +4,7 @@ import {
   ACCOUNT_ENROLLMENT_FEATURE,
   ACCOUNT_JOIN_FEATURE,
   ACCOUNT_COMPUTERS_FEATURE,
+  ACCOUNT_JOIN_PROMPTS_FEATURE,
   ACCOUNT_VAULT_FEATURE,
 } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
@@ -204,6 +205,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
     ? [
         ACCOUNT_GATEWAY_FEATURE,
         ACCOUNT_JOIN_FEATURE,
+        ACCOUNT_JOIN_PROMPTS_FEATURE,
         ACCOUNT_COMPUTERS_FEATURE,
         ACCOUNT_VAULT_FEATURE,
       ]

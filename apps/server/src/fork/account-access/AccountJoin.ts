@@ -1,10 +1,13 @@
 import { AuthEnvironmentScope, AuthSessionId, ServerAuthSessionMethod } from "@t3tools/contracts";
 import {
+  ACCOUNT_JOIN_PROMPT_CHOICES,
   AccountJoinCode,
   AccountJoinReview,
   LibraryError,
+  type AccountJoinPrompt,
   type AccountJoinRequest,
   type AccountJoinRedemption,
+  type AccountJoinResponse,
 } from "@t3tools/contracts/fork";
 import {
   decodeEd25519PublicKey,
@@ -27,9 +30,12 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { LibraryPushService } from "../library-push/LibraryPushService.ts";
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { writeLibraryCredential } from "../project-library/enrollment.ts";
 import { AccountEnrollment } from "./AccountEnrollment.ts";
@@ -50,6 +56,8 @@ const Record = Schema.Struct({
   secretHash: Schema.String,
   owner: Schema.NullOr(Owner),
   epoch: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
+  /** Absent on requests made before owner devices were prompted; those take a typed code. */
+  choices: Schema.optionalKey(Schema.Array(AccountJoinCode)),
 });
 type Record = typeof Record.Type;
 const encode = Schema.encodeEffect(Schema.fromJsonString(Record));
@@ -88,6 +96,15 @@ export class AccountJoin extends Context.Service<
     readonly redeem: (
       input: AccountJoinRequest,
     ) => Effect.Effect<AccountJoinRedemption, LibraryError>;
+    /** Pending requests for an owner device, again after every change. Never the true code. */
+    readonly prompts: (
+      session: AuthenticatedSession,
+    ) => Stream.Stream<ReadonlyArray<AccountJoinPrompt>, LibraryError>;
+    /** Approves only when `code` is the terminal's; any other answer declines the request. */
+    readonly respond: (
+      input: AccountJoinResponse,
+      session: AuthenticatedSession,
+    ) => Effect.Effect<AccountJoinReview, LibraryError>;
   }
 >()("t3/fork/account-access/AccountJoin") {}
 
@@ -101,6 +118,11 @@ const make = Effect.gen(function* () {
   const signature = yield* Signature.Signature;
   const management = yield* LibraryManagement;
   const enrollment = yield* AccountEnrollment;
+  const push = yield* LibraryPushService;
+  // Owns each prompt push, so a slow Apple reply never holds the computer's request open.
+  const scope = yield* Effect.scope;
+  const revision = yield* SubscriptionRef.make(0);
+  const changed = SubscriptionRef.update(revision, (value) => value + 1);
   const enabled = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(Config.withDefault(false));
   const redirect = yield* Config.String("LOOM_IDENTITY_REDIRECT_URI").pipe(Config.option);
   const lock = yield* Semaphore.make(1);
@@ -183,6 +205,13 @@ const make = Effect.gen(function* () {
     if (found.length !== 1) return yield* ended();
     return found[0]!;
   });
+  const ownerFor = (session: AuthenticatedSession) => {
+    const { expiresAt, ...sessionFields } = session;
+    return {
+      ...sessionFields,
+      ...(expiresAt === undefined ? {} : { expiresAt: DateTime.toUtc(expiresAt) }),
+    };
+  };
   const begin = Effect.fn("AccountJoin.begin")(function* (input: AccountJoinRequest) {
     const verified = yield* verify(input);
     const active = yield* records();
@@ -208,13 +237,25 @@ const make = Effect.gen(function* () {
         detail:
           "Too many computers are waiting for approval. Wait for an existing code to expire, then try again.",
       });
-    let code: string;
-    do {
+    const taken = new Set(
+      active.flatMap((record) => [record.review.code, ...(record.choices ?? [])]),
+    );
+    const codes: string[] = [];
+    while (codes.length < ACCOUNT_JOIN_PROMPT_CHOICES) {
       const value = Hex.encode(
         yield* random.randomBytes(5).pipe(Effect.mapError(unavailable)),
       ).toUpperCase();
-      code = `${value.slice(0, 5)}-${value.slice(5)}`;
-    } while (active.some((record) => record.review.code === code));
+      const next = `${value.slice(0, 5)}-${value.slice(5)}`;
+      if (!taken.has(next)) {
+        taken.add(next);
+        codes.push(next);
+      }
+    }
+    const code = codes[0]!;
+    // The true code's position comes from the same random source, so the order tells nothing.
+    const [position] = yield* random.randomBytes(1).pipe(Effect.mapError(unavailable));
+    const choices = codes.slice(1);
+    choices.splice(position! % ACCOUNT_JOIN_PROMPT_CHOICES, 0, code);
     const review: AccountJoinReview = {
       requestId: input.proof.requestId,
       code,
@@ -230,7 +271,16 @@ const make = Effect.gen(function* () {
       secretHash: verified.secretHash,
       owner: null,
       epoch: yield* enrollment.epoch(input.proof.environmentId),
+      choices,
     });
+    yield* changed;
+    yield* push
+      .joinPrompt({
+        libraryEnvironmentId: input.proof.libraryEnvironmentId,
+        requestId: review.requestId,
+        expiresAt: review.expiresAt,
+      })
+      .pipe(Effect.forkIn(scope));
     return review;
   }, lock.withPermit);
   const lookup = Effect.fn("AccountJoin.lookup")(function* (
@@ -251,14 +301,8 @@ const make = Effect.gen(function* () {
     const next = input.approve ? "approved" : "denied";
     if (record.review.state !== "pending" && record.review.state !== next) return yield* ended();
     const review: AccountJoinReview = { ...record.review, state: next };
-    const { expiresAt, ...sessionFields } = session;
-    const owner = input.approve
-      ? {
-          ...sessionFields,
-          ...(expiresAt === undefined ? {} : { expiresAt: DateTime.toUtc(expiresAt) }),
-        }
-      : null;
-    yield* save({ ...record, review, owner });
+    yield* save({ ...record, review, owner: input.approve ? ownerFor(session) : null });
+    yield* changed;
     return review;
   }, lock.withPermit);
   const redeem = Effect.fn("AccountJoin.redeem")(function* (
@@ -283,6 +327,55 @@ const make = Effect.gen(function* () {
       enrollment: yield* enrollment.approve(input.proof, record.owner, record.epoch),
     };
   }, lock.withPermit);
-  return AccountJoin.of({ begin, lookup, decide, redeem });
+  const pending = Effect.fn("AccountJoin.pending")(function* (session: AuthenticatedSession) {
+    yield* management.authorizeEnrollment(session);
+    const prompts: AccountJoinPrompt[] = [];
+    for (const record of yield* records()) {
+      if (record.review.state !== "pending" || record.choices === undefined) continue;
+      if (record.epoch !== (yield* enrollment.epoch(record.review.environmentId))) continue;
+      const { requestId, environmentId, label, keyFingerprint, expiresAt } = record.review;
+      prompts.push({
+        requestId,
+        environmentId,
+        label,
+        keyFingerprint,
+        expiresAt,
+        choices: record.choices,
+      });
+    }
+    return prompts.toSorted((left, right) => left.expiresAt - right.expiresAt);
+  }, lock.withPermit);
+  // Each change re-checks the session, so a revoked sign-in stops seeing requests.
+  const prompts = (session: AuthenticatedSession) =>
+    SubscriptionRef.changes(revision).pipe(
+      Stream.mapEffect(() => pending(session)),
+      Stream.changesWith(
+        (left, right) =>
+          left.length === right.length &&
+          left.every((prompt, index) => prompt.requestId === right[index]?.requestId),
+      ),
+    );
+  const respond = Effect.fn("AccountJoin.respond")(function* (
+    input: AccountJoinResponse,
+    session: AuthenticatedSession,
+  ) {
+    yield* management.authorizeEnrollment(session);
+    const found = (yield* records()).filter(
+      (record) => record.review.requestId === input.requestId,
+    );
+    if (found.length !== 1) return yield* ended();
+    const record = found[0]!;
+    if (record.epoch !== (yield* enrollment.epoch(record.review.environmentId)))
+      return yield* ended();
+    const matches = input.code !== null && input.code === record.review.code;
+    const next = matches ? "approved" : "denied";
+    if (record.review.state !== "pending")
+      return record.review.state === next ? record.review : yield* ended();
+    const review: AccountJoinReview = { ...record.review, state: next };
+    yield* save({ ...record, review, owner: matches ? ownerFor(session) : null });
+    yield* changed;
+    return review;
+  }, lock.withPermit);
+  return AccountJoin.of({ begin, lookup, decide, redeem, prompts, respond });
 });
 export const layer = Layer.effect(AccountJoin, make);

@@ -578,10 +578,17 @@ const layerAccountEnrollment = AccountEnrollment.layer.pipe(
   ),
 );
 const layerAccountJoin = AccountJoin.layer.pipe(
-  Layer.provide(Layer.merge(layerAccountEnrollment, layerLibraryManagement)),
+  Layer.provide(Layer.mergeAll(layerAccountEnrollment, layerLibraryManagement, LibraryPushLive)),
 );
 const layerComputerJoin = ComputerJoin.layer.pipe(
-  Layer.provide(Layer.merge(layerAccountEnrollment, LibraryConnection.layer)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerAccountEnrollment,
+      LibraryConnection.layer,
+      layerDirectoryReporter,
+      ReachService.layer,
+    ),
+  ),
   Layer.provide(FetchHttpClient.layer),
 );
 

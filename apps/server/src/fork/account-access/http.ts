@@ -11,6 +11,7 @@ import {
   ACCOUNT_JOIN_REDEEM,
   ACCOUNT_JOIN_START,
   ACCOUNT_JOIN_STEP,
+  ACCOUNT_JOIN_STATUS,
   AccountJoinRequest,
   AccountJoinRedemption,
   ComputerJoinStart,
@@ -190,6 +191,14 @@ const joinStep = withForkRuntime(
     });
   }),
 );
+const joinStatus = withForkRuntime(
+  Effect.gen(function* () {
+    yield* joinOperator;
+    return HttpServerResponse.jsonUnsafe(yield* (yield* ComputerJoin).readiness, {
+      headers: { "cache-control": "no-store" },
+    });
+  }),
+);
 const joinErrors = {
   LibraryError: (error: LibraryError) =>
     Effect.succeed(
@@ -218,6 +227,7 @@ export const AccountAccessRoutes = Layer.mergeAll(
   ),
   HttpRouter.add("POST", ACCOUNT_JOIN_START, joinStart.pipe(Effect.catchTags(joinErrors))),
   HttpRouter.add("POST", ACCOUNT_JOIN_STEP, joinStep.pipe(Effect.catchTags(joinErrors))),
+  HttpRouter.add("POST", ACCOUNT_JOIN_STATUS, joinStatus.pipe(Effect.catchTags(joinErrors))),
   HttpRouter.add("*", `${ACCOUNT_ACCESS_PREFIX}*`, forward),
   HttpRouter.add("POST", ACCOUNT_ACCESS_VERIFY, verify),
   HttpRouter.add("POST", ACCOUNT_ENROLLMENT_ACTIVATE, activate),

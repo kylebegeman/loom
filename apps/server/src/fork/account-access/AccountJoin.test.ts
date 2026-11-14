@@ -7,14 +7,20 @@ import { AuthSessionId, AuthStandardClientScopes, EnvironmentId } from "@t3tools
 import { LibraryError, type AccountJoinRequest } from "@t3tools/contracts/fork";
 import { directoryPublicKeyFromPem, signDirectoryReport } from "@t3tools/shared/fork/directory";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Redacted from "effect/Redacted";
+import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { LibraryPushService } from "../library-push/LibraryPushService.ts";
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { AccountEnrollment } from "./AccountEnrollment.ts";
 import * as Join from "./AccountJoin.ts";
@@ -72,55 +78,60 @@ const fixture = Effect.gen(function* () {
   const authorized = Effect.suspend(() =>
     ownerAllowed ? Effect.void : Effect.fail(new LibraryError({ reason: "blocked" })),
   );
-  const open = Join.AccountJoin.pipe(
-    Effect.provide(
-      Join.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(LIBRARY) }),
-            Layer.mock(LibraryManagement)({ authorizeEnrollment: () => authorized }),
-            Layer.mock(AccountEnrollment)({
-              epoch: () => Effect.sync(() => epoch),
-              approve: (proof, _owner, expectedEpoch) =>
-                Effect.suspend(() =>
-                  expectedEpoch !== epoch
-                    ? Effect.fail(new LibraryError({ reason: "request-conflict" }))
-                    : authorized,
-                ).pipe(
-                  Effect.map(() => {
-                    issued.push(proof.environmentId);
-                    return {
-                      requestId: "receipt",
-                      credential: {
-                        version: 1 as const,
-                        sourceEnvironmentId: proof.environmentId,
-                        libraryEnvironmentId: LIBRARY,
-                        libraryUrl: URL,
-                        sessionId: AuthSessionId.make("machine"),
-                        accessToken: Redacted.make("machine-only"),
-                        expiresAt: DateTime.formatIso(DateTime.makeUnsafe(NOW + 86400000)),
-                      },
-                      management: {
-                        token: "machine-delegation",
-                        sourceEnvironmentId: proof.environmentId,
-                        libraryEnvironmentId: LIBRARY,
-                        authorityId: "authority",
-                        authorityEpoch: 1,
-                        keyFingerprint: "fingerprint",
-                        expiresAt: NOW + 86400000,
-                      },
-                    };
-                  }),
-                ),
-            }),
-          ),
+  const pushes = yield* Queue.unbounded<string>();
+  // Built in the test's scope, which owns the prompt pushes the service forks.
+  const open = Layer.build(
+    Join.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(LIBRARY) }),
+          Layer.mock(LibraryPushService)({
+            alerts: false,
+            joinPrompt: (input) => Queue.offer(pushes, input.requestId).pipe(Effect.asVoid),
+          }),
+          Layer.mock(LibraryManagement)({ authorizeEnrollment: () => authorized }),
+          Layer.mock(AccountEnrollment)({
+            epoch: () => Effect.sync(() => epoch),
+            approve: (proof, _owner, expectedEpoch) =>
+              Effect.suspend(() =>
+                expectedEpoch !== epoch
+                  ? Effect.fail(new LibraryError({ reason: "request-conflict" }))
+                  : authorized,
+              ).pipe(
+                Effect.map(() => {
+                  issued.push(proof.environmentId);
+                  return {
+                    requestId: "receipt",
+                    credential: {
+                      version: 1 as const,
+                      sourceEnvironmentId: proof.environmentId,
+                      libraryEnvironmentId: LIBRARY,
+                      libraryUrl: URL,
+                      sessionId: AuthSessionId.make("machine"),
+                      accessToken: Redacted.make("machine-only"),
+                      expiresAt: DateTime.formatIso(DateTime.makeUnsafe(NOW + 86400000)),
+                    },
+                    management: {
+                      token: "machine-delegation",
+                      sourceEnvironmentId: proof.environmentId,
+                      libraryEnvironmentId: LIBRARY,
+                      authorityId: "authority",
+                      authorityEpoch: 1,
+                      keyFingerprint: "fingerprint",
+                      expiresAt: NOW + 86400000,
+                    },
+                  };
+                }),
+              ),
+          }),
         ),
       ),
     ),
-  );
+  ).pipe(Effect.map(Context.get(Join.AccountJoin)));
   return {
     open,
     request,
+    pushes,
     issued,
     removeComputer: () => {
       epoch++;
@@ -245,4 +256,78 @@ it.effect(
         expect((yield* restarted.redeem(fresh)).state).toBe("approved");
       }),
     ),
+);
+
+it.effect("approves from a prompt only with the terminal's code, and declines on any other", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const service = yield* f.open;
+      const request = yield* f.request();
+      const review = yield* service.begin(request);
+      expect(yield* Queue.take(f.pushes)).toBe(review.requestId);
+      const [prompts] = yield* service.prompts(owner).pipe(Stream.take(1), Stream.runCollect);
+      expect(prompts).toHaveLength(1);
+      const prompt = prompts![0]!;
+      expect(prompt).not.toHaveProperty("code");
+      expect(prompt.choices).toHaveLength(3);
+      expect(new Set(prompt.choices).size).toBe(3);
+      expect(prompt.choices).toContain(review.code);
+      const wrong = prompt.choices.find((choice) => choice !== review.code)!;
+      expect(
+        (yield* service.respond({ requestId: review.requestId, code: wrong }, owner)).state,
+      ).toBe("denied");
+      expect(yield* service.redeem(request)).toEqual({ state: "denied" });
+      expect(
+        (yield* service
+          .respond({ requestId: review.requestId, code: review.code }, owner)
+          .pipe(Effect.flip)).reason,
+      ).toBe("request-conflict");
+      const fresh = { ...request, proof: { ...request.proof, requestId: "second-request" } };
+      const next = yield* service.begin(fresh);
+      expect(yield* service.begin(fresh)).toEqual(next);
+      expect(yield* Queue.take(f.pushes)).toBe("second-request");
+      expect(
+        (yield* service.respond({ requestId: next.requestId, code: next.code }, owner)).state,
+      ).toBe("approved");
+      expect(
+        (yield* service.respond({ requestId: next.requestId, code: next.code }, owner)).state,
+      ).toBe("approved");
+      expect((yield* service.redeem(fresh)).state).toBe("approved");
+      expect(f.issued).toEqual([SOURCE]);
+      expect(yield* Queue.size(f.pushes)).toBe(0);
+    }),
+  ),
+);
+
+it.effect("streams pending prompts to the owner as requests arrive and end", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const service = yield* f.open;
+      const subscribed = yield* Deferred.make<void>();
+      const seen = yield* service.prompts(owner).pipe(
+        Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(subscribed);
+      const request = yield* f.request();
+      const review = yield* service.begin(request);
+      yield* service.respond({ requestId: review.requestId, code: null }, owner);
+      expect(
+        (yield* Fiber.join(seen)).map((prompts) => prompts.map((prompt) => prompt.requestId)),
+      ).toEqual([[], [review.requestId], []]);
+      f.denyOwner();
+      expect((yield* service.prompts(owner).pipe(Stream.runCollect, Effect.result))._tag).toBe(
+        "Failure",
+      );
+      expect(
+        (yield* service
+          .respond({ requestId: review.requestId, code: review.code }, owner)
+          .pipe(Effect.result))._tag,
+      ).toBe("Failure");
+    }),
+  ),
 );

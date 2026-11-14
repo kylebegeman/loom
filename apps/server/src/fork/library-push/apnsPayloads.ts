@@ -127,3 +127,28 @@ export const agentAlertRequest = (
     ),
   };
 };
+
+/**
+ * A computer waiting to join the account. The text names no computer, since whoever ran the join
+ * command chose its name; the approval screen shows it beside the codes to pick from.
+ */
+export const joinPromptRequest = (input: {
+  readonly libraryEnvironmentId: EnvironmentId;
+  readonly requestId: string;
+  readonly expiresAt: number;
+  readonly nowMs: number;
+}): ApnsAlertRequest => ({
+  payload: alertPayload({
+    title: "Loom",
+    body: "A computer is asking to join your account. Open Loom and tap the code it shows.",
+    threadId: "loom-account-join",
+    data: {
+      environmentId: input.libraryEnvironmentId,
+      requestId: input.requestId,
+      deepLink: `/library/join/${encodeURIComponent(input.requestId)}`,
+    },
+  }),
+  priority: 10,
+  expiresInSeconds: Math.max(1, Math.floor((input.expiresAt - input.nowMs) / 1000)),
+  collapseId: collapseId("loom-join", input.libraryEnvironmentId, input.requestId),
+});
