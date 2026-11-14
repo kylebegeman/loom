@@ -563,6 +563,10 @@
       "types": "./src/fork/release-mirror.ts",
       "import": "./src/fork/release-mirror.ts"
     },
+    "./fork/cli-release": {
+      "types": "./src/fork/cli-release.ts",
+      "import": "./src/fork/cli-release.ts"
+    },
     "./fork/library-computer": {
       "types": "./src/fork/library-computer.ts",
       "import": "./src/fork/library-computer.ts"

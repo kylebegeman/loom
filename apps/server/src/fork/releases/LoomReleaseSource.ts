@@ -1,6 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryError } from "@t3tools/contracts/fork";
 import { newestCliReleaseVersion, type CliReleaseChannel } from "@t3tools/shared/cliRelease";
+import { isLoomGitHubReleaseBaseUrl } from "@t3tools/shared/fork/cli-release";
 import {
   LOOM_RELEASE_INDEX_FILE,
   LOOM_RELEASES_NOT_HOSTED,
@@ -36,7 +37,7 @@ export class LoomReleaseSource extends Context.Service<
   LoomReleaseSource,
   {
     /**
-     * An explicit base wins. Otherwise an enrolled computer downloads from its Library, unless the
+     * An explicit mirror wins. Otherwise an enrolled computer downloads from its Library, unless the
      * Library says it hosts no releases; then `configured` is returned unchanged.
      */
     readonly resolve: (configured: ReleaseSource) => Effect.Effect<ReleaseSource>;
@@ -51,6 +52,15 @@ const transportError = (request: HttpClientRequest.HttpClientRequest, descriptio
   new HttpClientError.HttpClientError({
     reason: new HttpClientError.TransportError({ request, description }),
   });
+
+/**
+ * Whether a configured base leaves the source to the Library: none, or Loom's own GitHub releases,
+ * which LoomOS and Omarchy recipes name explicitly and which turn private with the repository.
+ */
+export const followsLibraryReleases = (releaseBaseUrl: string | undefined) => {
+  const base = releaseBaseUrl?.trim();
+  return !base || isLoomGitHubReleaseBaseUrl(base);
+};
 
 /** One response from the Library itself: its redirect is never followed with its credentials. */
 const sendWithoutRedirect = (send: Send, request: HttpClientRequest.HttpClientRequest) =>
@@ -125,7 +135,7 @@ const make = Effect.gen(function* () {
   const connections = yield* LibraryConnectionService;
   return LoomReleaseSource.of({
     resolve: Effect.fn("LoomReleaseSource.resolve")(function* (configured) {
-      if (configured.releaseBaseUrl !== undefined) return configured;
+      if (!followsLibraryReleases(configured.releaseBaseUrl)) return configured;
       return yield* releaseSourceFor(yield* connections.current, connections.send, configured);
     }),
   });

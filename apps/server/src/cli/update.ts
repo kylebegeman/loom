@@ -24,6 +24,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
 import type * as ServerConfig from "../config.ts"; // fork: private-releases
 import {
+  followsLibraryReleases,
   libraryReleasesForHome,
   newestLibraryRelease,
 } from "../fork/releases/LoomReleaseSource.ts"; // fork: private-releases
@@ -382,10 +383,10 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   const service = yield* BootService.BootService;
   const policy = yield* ManagedPolicy.ManagedPolicy;
   const mirror = managedUpdateMirror(policy.document);
-  // fork: private-releases: a policy mirror or an explicit base wins over the Library, as on the server.
+  // fork: private-releases: a policy or explicit mirror wins over the Library, as on the server.
   const library =
     mirror === undefined &&
-    !environment[CLI_RELEASE_BASE_URL_ENV]?.trim() &&
+    followsLibraryReleases(environment[CLI_RELEASE_BASE_URL_ENV]) &&
     input.serverConfig !== undefined
       ? yield* libraryReleasesForHome(input.serverConfig)
       : undefined;

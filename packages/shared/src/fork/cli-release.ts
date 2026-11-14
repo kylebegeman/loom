@@ -2,9 +2,14 @@
 export const LOOM_CLI_RELEASE_REPOSITORY = "kylebegeman/loom";
 const LOOM_RELEASE_BASE_URL = `https://github.com/${LOOM_CLI_RELEASE_REPOSITORY}/releases/download`;
 
+/** Whether `baseUrl` names Loom's own GitHub releases rather than a mirror. */
+export function isLoomGitHubReleaseBaseUrl(baseUrl: string): boolean {
+  return baseUrl.replace(/\/+$/, "") === LOOM_RELEASE_BASE_URL;
+}
+
 /** Loom's own tags are bare; explicit mirrors retain upstream's v-prefixed archive layout. */
 export function loomCliReleaseVersionSegment(version: string, baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "") === LOOM_RELEASE_BASE_URL ? version : `v${version}`;
+  return isLoomGitHubReleaseBaseUrl(baseUrl) ? version : `v${version}`;
 }
 
 export function loomCliReleaseDownloadUrl(version: string, baseUrl: string): string {

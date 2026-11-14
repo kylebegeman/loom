@@ -22,6 +22,8 @@ import {
 
 const ORIGIN = "https://library.example.test";
 const SIGNED = "https://s3.example.test/bucket/releases/v1.2.3/SHA256SUMS?X-Amz-Signature=abc";
+// LoomOS and Omarchy recipes name it explicitly; it follows the Library like no base at all.
+const GITHUB_RELEASES = "https://github.com/kylebegeman/loom/releases/download/";
 
 const fixture = (libraryResponse: (url: string) => Response) =>
   Effect.gen(function* () {
@@ -119,19 +121,18 @@ describe("loom release source", () => {
 
   it.effect("downloads from the Library when it hosts releases", () =>
     Effect.gen(function* () {
-      const { f, service } = yield* resolveWith(
-        remote,
-        () => new Response(null, { status: 302, headers: { location: SIGNED } }),
-      );
-      const source = yield* service.resolve({
-        releaseBaseUrl: undefined,
-        httpClient: f.directClient,
-      });
-      expect(source.releaseBaseUrl).toBe(`${ORIGIN}/api/loom/releases`);
-      expect(source.httpClient).not.toBe(f.directClient);
-      expect(yield* Ref.get(f.sent)).toEqual([
-        { url: `${ORIGIN}/api/loom/releases/index.json`, redirect: "manual" },
-      ]);
+      for (const releaseBaseUrl of [undefined, GITHUB_RELEASES]) {
+        const { f, service } = yield* resolveWith(
+          remote,
+          () => new Response(null, { status: 302, headers: { location: SIGNED } }),
+        );
+        const source = yield* service.resolve({ releaseBaseUrl, httpClient: f.directClient });
+        expect(source.releaseBaseUrl).toBe(`${ORIGIN}/api/loom/releases`);
+        expect(source.httpClient).not.toBe(f.directClient);
+        expect(yield* Ref.get(f.sent)).toEqual([
+          { url: `${ORIGIN}/api/loom/releases/index.json`, redirect: "manual" },
+        ]);
+      }
     }),
   );
 
@@ -143,9 +144,11 @@ describe("loom release source", () => {
         [(): LibraryConnection => ({ kind: "none" }), notHosted],
         [(send: Send) => ({ ...remote(send), credentialAvailable: false }), notHosted],
       ] as const) {
-        const { f, service } = yield* resolveWith(connection, response);
-        const configured = { releaseBaseUrl: undefined, httpClient: f.directClient };
-        expect(yield* service.resolve(configured)).toBe(configured);
+        for (const releaseBaseUrl of [undefined, GITHUB_RELEASES]) {
+          const { f, service } = yield* resolveWith(connection, response);
+          const configured = { releaseBaseUrl, httpClient: f.directClient };
+          expect(yield* service.resolve(configured)).toBe(configured);
+        }
       }
       const { f, service } = yield* resolveWith(remote, notHosted);
       const explicit = { releaseBaseUrl: "https://mirror.example/", httpClient: f.directClient };
