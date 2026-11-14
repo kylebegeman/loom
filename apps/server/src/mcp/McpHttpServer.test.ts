@@ -23,6 +23,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber"; // fork: account-links
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option"; // fork: account-links
 import * as Logger from "effect/Logger";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -1343,7 +1344,10 @@ it.effect("admits only the account's own links while the Linked environments bet
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(
             Layer.mock(AccountLinks)({
-              admits: (sessionId) => Effect.succeed(sessionId === account.sessionId),
+              admittedFrom: (sessionId) =>
+                Effect.succeed(
+                  sessionId === account.sessionId ? Option.some(environmentId) : Option.none(),
+                ),
               holdsAny: Effect.succeed(false),
             }),
           ),
@@ -1414,7 +1418,7 @@ it.effect(
             Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
             Layer.provide(
               Layer.mock(AccountLinks)({
-                admits: () => Effect.succeed(true),
+                admittedFrom: () => Effect.succeedSome(environmentId),
                 holdsAny: Effect.succeed(true),
               }),
             ),

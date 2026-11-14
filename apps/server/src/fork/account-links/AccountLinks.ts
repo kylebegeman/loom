@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 export class AccountLinkError extends Schema.TaggedError<AccountLinkError>()("AccountLinkError", {
@@ -40,6 +41,10 @@ export class AccountLinks extends Context.Service<
     readonly holds: (environmentId: EnvironmentId) => Effect.Effect<boolean>;
     /** Whether a peer-link session here was issued to another computer of the account. */
     readonly admits: (sessionId: AuthSessionId) => Effect.Effect<boolean>;
+    /** The computer such a session was issued to, which stays the same across its renewals. */
+    readonly admittedFrom: (
+      sessionId: AuthSessionId,
+    ) => Effect.Effect<Option.Option<EnvironmentId>>;
     /** Whether a bearer token is one of those sessions. */
     readonly admitsToken: (token: string) => Effect.Effect<boolean>;
   }

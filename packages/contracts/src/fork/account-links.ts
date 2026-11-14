@@ -21,6 +21,8 @@ export const ACCOUNT_LINKS_ADMIT = "/api/loom/account/links/admit";
 
 const Grant = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 const Label = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(160));
+/** The presenting computer's signature over the grant and the computer it presents to. */
+const Proof = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048));
 
 /** Whether agents on the owner's computers may work on each other, and with what access. */
 export const AccountLinkPolicy = Schema.Struct({
@@ -64,9 +66,13 @@ export const AccountLinkGrant = Schema.Struct({
 });
 export type AccountLinkGrant = typeof AccountLinkGrant.Type;
 
-/** What a computer presents to another. `environmentId` names the computer presenting it. */
+/**
+ * What a computer presents to another. `environmentId` names the computer presenting it, and
+ * `proof` is its directory key's signature over the grant and the computer it presents to.
+ */
 export const AccountLinkAdmitRequest = Schema.Struct({
   grant: Grant,
+  proof: Proof,
   environmentId: EnvironmentId,
 });
 export type AccountLinkAdmitRequest = typeof AccountLinkAdmitRequest.Type;
@@ -83,6 +89,7 @@ export type AccountLinkAdmission = typeof AccountLinkAdmission.Type;
 /** The admitting computer asks the Library whether the grant names it, with its key. */
 export const AccountLinkVerifyRequest = Schema.Struct({
   grant: Grant,
+  proof: Proof,
   source: EnvironmentId,
   keyFingerprint: Schema.String.check(Schema.isMaxLength(256)),
 });

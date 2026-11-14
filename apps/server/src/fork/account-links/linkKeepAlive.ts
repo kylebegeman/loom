@@ -2,8 +2,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpServerResponse } from "effect/http";
+import { type HttpServerRequest, HttpServerResponse } from "effect/http";
 
 /**
  * Cloudflare drops a request that sends nothing for 100 s, and a tailnet path has dropped a
@@ -14,6 +16,25 @@ export const LINK_KEEP_ALIVE_INTERVAL = Duration.seconds(10);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const comment = encoder.encode(": keepalive\n\n");
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
+const isToolCall = (message: unknown) =>
+  Predicate.hasProperty(message, "method") && message.method === "tools/call";
+
+/**
+ * Whether a request calls a tool, the only MCP request that waits on work. Every other answer
+ * keeps its own status and headers, such as a new session's `mcp-session-id`. The server caches
+ * the body, so the MCP handler reads it again.
+ */
+const callsTool = (request: HttpServerRequest.HttpServerRequest) =>
+  request.text.pipe(
+    Effect.map((text) =>
+      Option.exists(decodeJson(text), (body) =>
+        Array.isArray(body) ? body.some(isToolCall) : isToolCall(body),
+      ),
+    ),
+    Effect.orElseSucceed(() => false),
+  );
 
 /** The answer as server-sent events: an event stream as it is, JSON as one event. */
 const asEvents = ({ body }: HttpServerResponse.HttpServerResponse): Stream.Stream<Uint8Array> => {
@@ -26,25 +47,30 @@ const asEvents = ({ body }: HttpServerResponse.HttpServerResponse): Stream.Strea
 };
 
 /**
- * A linked environment's call still running after one interval answers as an event stream, with
- * a comment each interval until its result goes out as the stream's event. Links read only the
- * `data:` lines of an event stream, so callers of any version decode the same answer.
+ * A linked environment's tool call still running after one interval answers as an event stream,
+ * with a comment each interval until its answer starts, which then goes out whole as the stream's
+ * event. Links read only the `data:` lines of an event stream, so callers of any version decode
+ * the same answer.
  */
 // Untraced: it runs for every linked request, inside that request's own span.
 export const keepLinkAlive = Effect.fnUntraced(function* <E, R>(
+  request: HttpServerRequest.HttpServerRequest,
   answer: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
 ) {
+  if (!(yield* callsTool(request))) return yield* answer;
   // In the request's scope, which stays open until a streamed body ends.
   const fiber = yield* Effect.forkScoped(answer);
   const early = yield* Fiber.join(fiber).pipe(Effect.timeoutOption(LINK_KEEP_ALIVE_INTERVAL));
   if (Option.isSome(early)) return early.value;
+  const waiting = Stream.tick(LINK_KEEP_ALIVE_INTERVAL).pipe(
+    Stream.map(() => comment),
+    Stream.interruptWhen(Fiber.await(fiber)),
+  );
   const result = Stream.fromEffect(Fiber.join(fiber).pipe(Effect.orDie)).pipe(
     Stream.flatMap(asEvents),
   );
-  return HttpServerResponse.stream(
-    Stream.merge(Stream.tick(LINK_KEEP_ALIVE_INTERVAL).pipe(Stream.map(() => comment)), result, {
-      haltStrategy: "right",
-    }),
-    { contentType: "text/event-stream", headers: { "cache-control": "no-store" } },
-  );
+  return HttpServerResponse.stream(Stream.concat(waiting, result), {
+    contentType: "text/event-stream",
+    headers: { "cache-control": "no-store" },
+  });
 });

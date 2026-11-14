@@ -281,18 +281,28 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     if (asked === undefined) return invalidModeLimit;
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
     const linkedEnvironments = yield* linksEnabled;
-    // fork: account-links -- links among the account's computers do not wait for Labs.
-    if (
-      limited.client?.linked === true &&
-      !linkedEnvironments &&
-      !(yield* accountLinks.admits(limited.client.sessionId))
-    )
+    // fork: account-links -- links among the account's computers do not wait for Labs, and
+    // what they start is theirs by computer, whichever session renewed them.
+    const accountLink =
+      limited.client?.linked === true
+        ? yield* accountLinks.admittedFrom(limited.client.sessionId)
+        : undefined;
+    if (limited.client?.linked === true && !linkedEnvironments && accountLink === undefined)
       return linkedEnvironmentsOff;
-    return { ...limited, linkedEnvironments: linkedEnvironments || (yield* accountLinks.holdsAny) };
+    const client =
+      limited.client === undefined || accountLink === undefined
+        ? limited.client
+        : { ...limited.client, sourceEnvironmentId: accountLink };
+    return {
+      ...limited,
+      client,
+      linkedEnvironments: linkedEnvironments || (yield* accountLinks.holdsAny),
+    };
   });
   // Untraced: a span here would wrap the tool call; the HTTP server span already covers it.
   return Effect.fnUntraced(function* (httpEffect) {
-    const admitted = yield* authenticateRequest(yield* HttpServerRequest.HttpServerRequest);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const admitted = yield* authenticateRequest(request);
     if (HttpServerResponse.isHttpServerResponse(admitted)) return admitted;
     const answer = httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, admitted),
@@ -300,7 +310,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
       Effect.map((response) => hideUnusableTools(response, admitted)), // fork: agent-catalog
     );
     // fork: account-links -- a link's long call, such as a wait, never goes silent on its route.
-    return yield* admitted.client?.linked === true ? keepLinkAlive(answer) : answer;
+    return yield* admitted.client?.linked === true ? keepLinkAlive(request, answer) : answer;
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
 

@@ -42,6 +42,8 @@ export interface McpClientCaller {
    * session as `linkOrigin`, and it changes only that work (`linkOrigin.ts`).
    */
   readonly linked?: boolean | undefined;
+  /** The computer an account link's session was issued to, which outlasts its renewals. */
+  readonly sourceEnvironmentId?: EnvironmentId | undefined; // fork: account-links
   /**
    * Narrower modes the client asked for on this request (`T3-Mode-Limit`):
    * another environment passing on the limits of the agent it calls for.

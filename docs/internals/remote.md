@@ -130,14 +130,20 @@ Unlinking on the linking side only forgets the token.
 
 **Computers on one Library account link to each other by themselves.**
 [`AccountLinksLive`](../../apps/server/src/fork/account-links/AccountLinksLive.ts)
-reconciles a computer's links with the Library's list of the owner's computers on
-enrollment, when the list changes, and every 3 minutes. The other computer admits
-a link by redeeming a one-use grant over its own Library connection, so no
-person's Library credentials reach a computer, and then issues an ordinary
-peer-link session. Account links ignore the Linked environments beta on both
-sides; links made with a pairing code still follow it. Their tokens go only to
-https or tailnet addresses, Loomhost first. On a Loomhost route the reach guard
-opens `/mcp` only to account-link sessions, and MCP's OAuth stays closed there.
+reconciles a computer's links with the Library's list of the owner's computers at
+start, every 3 minutes, and as soon as a computer it does not know yet presents a
+grant. The Library pushes nothing, so that presentation is how a join is noticed.
+The other computer admits a link by redeeming a one-use grant over its own Library
+connection, so no person's Library credentials reach a computer, and then issues
+an ordinary peer-link session. It asks the Library only about computers on its
+last roster, a few at a time, and the Library redeems a grant only with the
+presenting computer's directory-key signature for the admitting one. Without a
+roster for an hour a computer drops its account links: only the roster shows a
+removal or a lowered access. Account links ignore the Linked environments beta on
+both sides; links made with a pairing code still follow it. Grants and tokens go
+only to https DNS routes, Loomhost first, and a grant moves to the next address
+only when the connection never opened. On a Loomhost route the reach guard opens
+`/mcp` only to account-link sessions, and MCP's OAuth stays closed there.
 
 <!-- fork: account-links -->
 
@@ -151,7 +157,8 @@ subagents, forks and `create_threads` they derive. The rules live in
 shared access declarations, not tool by tool:
 
 - linked work may change only threads with the same origin, not the user's own
-  threads and not another link's;
+  threads and not another link's. An account link renews its session, so its
+  origin also names its computer, and that is what matches;
 - it cannot change projects, settings or scheduled tasks, nor use the receiving
   environment's own links;
 - its project setup scripts are skipped

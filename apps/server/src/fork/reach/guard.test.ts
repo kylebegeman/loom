@@ -70,6 +70,7 @@ const withGuard = <A, E>(
       admit: () => Effect.die("unused"),
       holdsAny: Effect.succeed(false),
       holds: () => Effect.succeed(false),
+      admittedFrom: () => Effect.succeedNone,
       admits: () => Effect.succeed(false),
       admitsToken: (token) => Effect.succeed(token === ACCOUNT_LINK_TOKEN),
     });
