@@ -209,7 +209,11 @@ function ProjectOverviewContent(props: {
     { includeInactiveCopies: true },
   );
   const representative = props.members[0]!;
-  const displayName = deriveProjectGroupLabel({ representative, members: props.members });
+  const displayName = deriveProjectGroupLabel({
+    groupKey: props.group.key,
+    representative,
+    members: props.members,
+  });
   const [draftName, setDraftName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const threads = useThreadShells();

@@ -16,6 +16,7 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as DeviceService from "../../device/DeviceService.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as EnvironmentTheme from "../../environmentTheme.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
 import type { McpCapability, McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
@@ -43,6 +44,7 @@ import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunne
 import * as DocumentText from "../../provider/DocumentText.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as PullRequestReviewGuideService from "../../pullRequest/PullRequestReviewGuideService.ts";
+import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -66,6 +68,7 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(ProjectService.ProjectService)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
+  Layer.mock(PullRequestService.PullRequestService)({}),
   ServerSettings.layerTest({}),
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
@@ -86,6 +89,7 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
   Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+  Layer.mock(EnvironmentTheme.EnvironmentThemeService)({}),
   McpProviderSessions.layer,
 );
 
@@ -208,9 +212,9 @@ it.effect("lists each session only the tools its credential can call", () =>
  * output schema. Raise a budget only on purpose, after cutting what new text repeats.
  */
 const AGENT_VISIBLE_BUDGET_BYTES = 420_000;
-// The 375-tool response measures 1,109,208 bytes; 33,451 are the safe-integer bounds Effect 4.1
-// adds to every `Schema.Int`, so the headroom for new text matches the earlier 1,100,000 budget.
-const FULL_CATALOG_BUDGET_BYTES = 1_135_000;
+// 33,451 bytes are the safe-integer bounds Effect 4.1 adds to every `Schema.Int`, and 3,759 are
+// upstream's t3_theme_read, t3_theme_set and send_to_user, so fork text keeps the 1,100,000 headroom.
+const FULL_CATALOG_BUDGET_BYTES = 1_139_000;
 const TOOL_BUDGET_BYTES = 32 * 1024;
 
 it.effect("keeps the full tool catalog within its byte budgets", () =>

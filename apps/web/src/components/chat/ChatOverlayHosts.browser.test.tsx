@@ -50,6 +50,7 @@ describe("RevertConfirmHost", () => {
           threadKey={threadKey}
           checkpoints={undefined}
           canOperate
+          worktreePath="/worktrees/thread-a"
           onConfirm={onConfirm}
           onFork={vi.fn()}
         />
@@ -86,6 +87,7 @@ it("explains shared workspace restrictions and forks without confirming a restor
         threadKey="env:shared"
         checkpoints={[readyCheckpoint]}
         canOperate
+        worktreePath="/worktrees/shared"
         onConfirm={onConfirm}
         onFork={onFork}
       />

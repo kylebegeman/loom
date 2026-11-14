@@ -12,7 +12,7 @@ import {
   LibraryPushActivityReply,
   type LibraryPushActivityRequest,
 } from "@t3tools/contracts/fork";
-import { type AgentAwarenessPhase, subagentAwaitsApproval } from "@t3tools/shared/agentAwareness";
+import { type AgentAwarenessPhase, subagentAwaitsUser } from "@t3tools/shared/agentAwareness";
 import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -164,6 +164,7 @@ export const agentAlertStep = (
               : {
                   requestId: input.childRequest.id,
                   updatedAt: input.childRequest.createdAt,
+                  waitsForInput: input.childRequest.kind === "user_input",
                 },
         });
   const attention =
@@ -241,7 +242,7 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
       shell === null ||
       shell.deletedAt !== null ||
       shell.archivedAt !== null ||
-      !subagentAwaitsApproval(shell)
+      !subagentAwaitsUser(shell)
     )
       return previous?.parentId;
     const visited = new Set<ThreadId>([threadId]);

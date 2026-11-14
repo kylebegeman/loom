@@ -50,6 +50,7 @@ const TERMINAL_RUN_STATUSES = new Set<OrchestratorMcpThreadRun["status"]>([
   "rolled_back",
 ]);
 const READ_PAGE_LIMIT = 100;
+const READ_ITEM_MAX_CHARS = 20_000;
 const TITLE_MAX_CHARS = 80;
 
 export class ThreadServerNotRunningError extends Schema.TaggedError<ThreadServerNotRunningError>()(
@@ -397,6 +398,7 @@ const readTimeline = Effect.fn("cli.thread.readTimeline")(function* (
         threadId,
         view,
         limit: READ_PAGE_LIMIT,
+        maxCharsPerItem: READ_ITEM_MAX_CHARS,
         runLimit: 1,
         ...(afterPosition === undefined ? {} : { afterPosition }),
       },
@@ -442,6 +444,7 @@ export const readLatestMessages = Effect.fn("cli.thread.readLatestMessages")(fun
           threadId,
           view: "messages",
           limit: READ_PAGE_LIMIT,
+          maxCharsPerItem: READ_ITEM_MAX_CHARS,
           runLimit: 1,
           ...(afterPosition < 0 ? {} : { afterPosition }),
         },
@@ -476,7 +479,13 @@ const readFullText = Effect.fn("cli.thread.readFullText")(function* (
   while (nextTextOffset !== null) {
     const page = yield* tools.call(
       "t3_thread_read",
-      { threadId, itemId: item.itemId, textOffset: nextTextOffset, runLimit: 1 },
+      {
+        threadId,
+        itemId: item.itemId,
+        textOffset: nextTextOffset,
+        runLimit: 1,
+        maxCharsPerItem: READ_ITEM_MAX_CHARS,
+      },
       OrchestratorMcpThreadReadResult,
     );
     const chunk = page.items.find((candidate) => candidate.itemId === item.itemId);

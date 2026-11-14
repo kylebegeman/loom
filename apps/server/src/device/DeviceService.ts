@@ -33,6 +33,7 @@ import {
   type ThreadId,
   type ProjectId,
 } from "@t3tools/contracts";
+import { extractPng } from "@t3tools/shared/png";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { SshCommandError } from "@t3tools/ssh/errors";
 import * as FileSystem from "effect/FileSystem";
@@ -1000,7 +1001,16 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const screenshot: DeviceService["Service"]["screenshot"] = Effect.fn("DeviceService.screenshot")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
-      return { device, png: yield* ready.devices.screenshot(device) };
+      const bytes = yield* ready.devices.screenshot(device);
+      const png = extractPng(bytes);
+      if (png === undefined) {
+        return yield* new DeviceOperationError({
+          operation: "screenshot",
+          reason: "hub_rejected",
+          cause: `The hub returned ${bytes.length} bytes without a complete PNG.`,
+        });
+      }
+      return { device, png };
     },
   );
 
@@ -1427,8 +1437,9 @@ export const make = Effect.gen(function* () {
           (cause) =>
             new DeviceOperationError({
               operation: "update device tool",
-              reason: "command_failed",
-              // Only the exit code goes into the shown message; npm's stderr can carry registry credentials.
+              reason:
+                cause.reason === "npm_not_found" ? "package_manager_missing" : "command_failed",
+              // npm's stderr can carry registry credentials; expose only the reason and exit code.
               ...(cause.exitCode !== undefined ? { exitCode: cause.exitCode } : {}),
               cause,
             }),

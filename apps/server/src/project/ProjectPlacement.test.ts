@@ -22,6 +22,7 @@ import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
 const projectRow = (projectId: string, workspaceRoot: string): ProjectStore.ProjectRow => ({
   projectId: ProjectId.make(projectId),
   title: projectId,
+  hasCustomTitle: false,
   workspaceRoot,
   defaultModelSelection: null,
   defaultThreadEnvMode: null,

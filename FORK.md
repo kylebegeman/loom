@@ -74,6 +74,7 @@ provider settings controls. Their marker counts are checked in `docs/fork/seams.
 | `apps/web/src/components/settings/ProviderInstanceCard.tsx`                 | Mount the Vault source control for sensitive environment fields. |
 | `apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx` | Mount native provider credential settings.                       |
 | `apps/server/src/provider/ProviderInstanceRegistry.test.ts`                 | Cover contextual delivery and fail-closed reload.                |
+| `apps/server/src/secrets/SecretCheck.test.ts`                               | Supply the Vault credential service to the registry.             |
 | `apps/server/src/auth/RpcAuthorization.test.ts`                             | Cover both settings mutation paths.                              |
 | `packages/client-runtime/src/state/commandPermissions.test.ts`              | Cover destination permissions and revocation.                    |
 
@@ -1435,6 +1436,10 @@ See [Connections help](docs/fork/user/connections.md).
 | `scripts/lib/public-config.test.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `scripts/lib/public-config.ts`                                               | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx`              | `fleet-connections` | Describe host sharing using the computer terminology.                      |
+| `apps/mobile/src/features/threads/LinkRequestCard.tsx`                       | `fleet-connections` | Name the Devices with access section in link instructions.                 |
+| `apps/server/src/cli/environment.ts`                                         | `fleet-connections` | Name the Devices with access section in link instructions.                 |
+| `apps/web/src/components/chat/LinkRequestCard.tsx`                           | `fleet-connections` | Name the Devices with access section in link instructions.                 |
+| `apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx`            | `fleet-connections` | Name the Devices with access section in link instructions.                 |
 | `packages/shared/src/cliRelease.test.ts`                                     | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/shared/src/cliRelease.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/ssh/src/tunnel.test.ts`                                            | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
@@ -1501,7 +1506,9 @@ behavior eval. It reads current skill files and reuses the upstream MCP eval har
 `knip.jsonc` (`ext-lint`) includes the directly invoked skill validator and semantic
 upstream report as entrypoints; neither is bundled into the running application.
 It also ignores upstream's mobile `workspace-list-insets.ts`, whose only caller
-is the early-return empty state that project-navigation's in-list empty states replace.
+is the early-return empty state that project-navigation's in-list empty states replace,
+and allows the server's `makeRestoreMissingWorktree` export, whose turn-start caller
+project-lifecycle's checkout restoration replaces (terminals still use it in-file).
 
 ### Native effect lint compatibility
 

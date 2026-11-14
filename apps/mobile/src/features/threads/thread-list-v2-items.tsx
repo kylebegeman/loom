@@ -43,7 +43,12 @@ import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
 } from "@t3tools/client-runtime/state/models";
-import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type EnvironmentMachineKind,
+} from "@t3tools/contracts";
+import { toServerClock } from "@t3tools/client-runtime/clock";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -92,6 +97,7 @@ import {
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozePresets,
   threadHasUnseenCompletion,
+  resolveThreadListV2RowStatus,
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
@@ -177,6 +183,7 @@ const TABULAR_DURATION_STYLE = {
 } as const;
 
 function ThreadListV2Duration(props: {
+  readonly environmentId: EnvironmentId;
   readonly startedAt: string | null;
   readonly leadingSpace: boolean;
 }) {
@@ -187,7 +194,7 @@ function ThreadListV2Duration(props: {
     <>
       {props.leadingSpace ? " " : null}
       <RNText style={TABULAR_DURATION_STYLE}>
-        {formatWorkingDurationLabel(nowMs - startedAtMs)}
+        {formatWorkingDurationLabel(toServerClock(props.environmentId, nowMs) - startedAtMs)}
       </RNText>
     </>
   );
@@ -786,7 +793,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   // fork: attention-status
   const resumeQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
-  const status = resolveThreadListV2Status(thread);
+  const rawStatus = resolveThreadListV2Status(thread);
+  const status = resolveThreadListV2RowStatus(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
   // fork: attention-status
   const connected =
@@ -1403,7 +1411,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {props.environmentLabel}
         </Text>
       ) : null}
-      {(status === "failed" || status === "limited") && thread.runtime?.lastError ? (
+      {(rawStatus === "failed" || rawStatus === "limited") && thread.runtime?.lastError ? (
         <Text
           className={cn(
             "mt-1 text-sm",
@@ -1476,11 +1484,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 {statusLabel.label}
                 {status === "working" ? (
                   <ThreadListV2Duration
+                    environmentId={thread.environmentId}
                     startedAt={resolveThreadWorkingStartedAt(thread)}
                     leadingSpace={statusLabel.label !== null}
                   />
                 ) : status === "waiting" ? (
                   <ThreadListV2Duration
+                    environmentId={thread.environmentId}
                     startedAt={thread.latestRun?.completedAt ?? null}
                     leadingSpace={statusLabel.label !== null}
                   />

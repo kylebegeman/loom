@@ -18,6 +18,7 @@ const isFileWorkspaceRoot = Schema.is(WorkspaceRootNotDirectoryError);
 export function projectMutationFailureMessage(error: ProjectServiceError): string {
   if (
     error._tag === "ProjectNotEmptyError" ||
+    error._tag === "ProjectInvalidError" ||
     error._tag === "ProjectConflictError" ||
     // fork: file-placement
     error._tag === "ProjectLocationManagedError"

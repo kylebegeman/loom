@@ -116,6 +116,9 @@ it.each([
       settingsOpen: false,
       getScrollOffset: () => 0,
       recordScrollOffset: () => undefined,
+      cancelSearch: (tab) => {
+        harness.state = workspaceTabsReducer(harness.state!, { type: "cancel", tab });
+      },
     };
     act(() => root.render(<WorkspaceToolbar />));
     const retainedCancel = harness.cancel;

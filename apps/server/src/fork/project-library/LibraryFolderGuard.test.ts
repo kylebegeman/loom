@@ -61,6 +61,7 @@ const bindingFor = (cwd: string): LibraryResolvedBinding => ({
 const projectRow = (workspaceRoot: string): ProjectStore.ProjectRow => ({
   projectId,
   title: "Library copy",
+  hasCustomTitle: false,
   workspaceRoot,
   defaultModelSelection: null,
   defaultThreadEnvMode: null,

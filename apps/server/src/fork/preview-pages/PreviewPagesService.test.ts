@@ -118,6 +118,7 @@ const harness = Effect.fnUntraced(function* (
               Effect.succeedSome({
                 projectId: id,
                 title: "Pages",
+                hasCustomTitle: false,
                 workspaceRoot: workspace,
                 defaultModelSelection: null,
                 defaultThreadEnvMode: null,

@@ -94,7 +94,7 @@ export function CommandPaletteContent({
         </CommandPanel>
         <CommandFooter className="max-sm:flex-col max-sm:items-start">
           {/* fork: fleet-connections */}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 max-sm:w-full">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 max-sm:w-full">
             {/* fork: library-palette */}
             {footerHints ?? (
               <>

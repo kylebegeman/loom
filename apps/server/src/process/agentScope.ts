@@ -19,6 +19,7 @@ import * as ServerConfig from "../config.ts";
 // fork: server-weight
 import * as ProviderProcessesLive from "./fork/providerProcesses.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import * as ProviderProcesses from "./providerProcesses.ts";
 
 const AGENT_SLICE = "app-t3code-agents.slice";
 // Owns every agent slice and competes with the server's unit or scope under app.slice.
@@ -108,6 +109,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const hostEnvironment = yield* HostProcess.Environment;
   const { stateDir } = yield* ServerConfig.ServerConfig;
+  const { hasOtherLiveOwner } = yield* ProviderProcesses.ProviderProcesses;
   const ownedSlice = ownedAgentSlice(stateDir);
   const layerScope = yield* Effect.scope;
 
@@ -132,6 +134,7 @@ export const make = Effect.gen(function* () {
   const stopLeftoverAgents = Effect.fn("agentScope.stopLeftoverAgents")(function* (
     systemctl: string,
   ) {
+    if (hasOtherLiveOwner) return;
     const shown = yield* run(systemctl, [
       "--user",
       "show",
@@ -216,6 +219,10 @@ export const make = Effect.gen(function* () {
       };
     }),
   );
+
+  // Layer acquisition is the startup barrier: recovery must not terminalize or
+  // continue old runs while a previous server's providers can still execute.
+  yield* systemd;
 
   // `shared` scopes serve other threads too: tracked only for OOM diagnosis on old systemd.
   const scopeByThread = new Map<string, { unit: string; oomKilled: boolean; shared: boolean }>();
@@ -431,6 +438,9 @@ export const make = Effect.gen(function* () {
 
 // fork: server-weight -- every host reaps its recorded agents before recovery starts.
 export const layer = Layer.merge(
-  Layer.effect(AgentScope, make).pipe(Layer.provide(ProcessRunner.layer)),
+  Layer.effect(AgentScope, make).pipe(
+    Layer.provide(ProcessRunner.layer),
+    Layer.provideMerge(ProviderProcesses.layer),
+  ),
   ProviderProcessesLive.layer,
 );

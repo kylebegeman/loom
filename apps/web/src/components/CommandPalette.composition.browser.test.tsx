@@ -13,9 +13,32 @@ import { CommandPalette } from "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
-const scopes = vi.hoisted(() => ({ denied: undefined as string | undefined }));
-const setup = (deniedScope?: string) => {
+const scopes = vi.hoisted(() => ({
+  denied: undefined as string | undefined,
+  sourceControl: undefined as unknown,
+}));
+const setup = (deniedScope?: string, sourceControl?: unknown) => {
   scopes.denied = deniedScope;
+  scopes.sourceControl = sourceControl;
+};
+const githubAvailable = {
+  versionControlSystems: [],
+  sourceControlProviders: [
+    {
+      kind: "github",
+      label: "GitHub",
+      status: "available",
+      version: { _tag: "None" },
+      installHint: "Install GitHub CLI",
+      detail: { _tag: "None" },
+      auth: {
+        status: "authenticated",
+        account: { _tag: "Some", value: "demo" },
+        host: { _tag: "None" },
+        detail: { _tag: "None" },
+      },
+    },
+  ],
 };
 const localStart = vi.hoisted(() => ({
   library: vi.fn(() => true),
@@ -114,11 +137,15 @@ vi.mock("../state/filesystem", async (original) => ({
 }));
 vi.mock("../state/query", async (original) => ({
   ...(await original<typeof import("../state/query")>()),
-  useEnvironmentQuery: () => ({ data: undefined, isLoading: false }),
+  useEnvironmentQuery: () => ({ data: scopes.sourceControl, isLoading: false }),
 }));
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
 }));
+vi.mock("../fork/project-library/state", async (original) => ({
+  ...(await original<typeof import("../fork/project-library/state")>()),
+  useLibraryAuthority: () => ({ authorityId: null, environment: null, connected: false }),
+})); // fork: library-palette
 vi.mock("../fork/commandPalette/registry", () => ({
   useForkCommandPaletteItems: () => ({ items: [], searchItems: [] }),
 }));
@@ -275,4 +302,16 @@ it.each([
   await expect.element(submit).toBeEnabled();
   await userEvent.keyboard("{Tab}");
   await expect.element(submit).toHaveFocus();
+});
+
+it("tells screen readers whether a new project will be published", async () => {
+  setup(undefined, githubAvailable);
+  await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+  await act(() => openCommandPalette({ open: "add-project" }));
+  await page.getByText("New project", { exact: true }).click();
+  await page.getByRole("combobox").fill("demo-project");
+  const option = page.getByRole("option", { name: /Create private repository/ });
+  await expect.element(option).toHaveAttribute("aria-checked", "false");
+  await option.click();
+  await expect.element(option).toHaveAttribute("aria-checked", "true");
 });

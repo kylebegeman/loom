@@ -642,7 +642,7 @@ it.effect("fab tools preserve the caller and catalog save needs environment writ
           return Effect.succeed(null);
         },
       });
-      const invoke = (name: Parameters<typeof toolkit.handle>[0], input: Record<string, unknown>) =>
+      const invoke = (name: Parameters<typeof toolkit.handle>[0], input: Schema.Json) =>
         toolkit
           .handle(name, input)
           .pipe(
@@ -739,10 +739,7 @@ it.effect(
             return Effect.void;
           },
         });
-        const invoke = (
-          name: Parameters<typeof toolkit.handle>[0],
-          input: Record<string, unknown>,
-        ) =>
+        const invoke = (name: Parameters<typeof toolkit.handle>[0], input: Schema.Json) =>
           toolkit
             .handle(name, input)
             .pipe(

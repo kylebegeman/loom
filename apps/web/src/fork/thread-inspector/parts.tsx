@@ -17,7 +17,6 @@ import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import {
   ANCHORED_COPY_TOAST_TIMEOUT_MS,
   showAnchoredCopyErrorToast,
-  showAnchoredCopySuccessToast,
 } from "~/components/ui/anchoredCopyToast";
 import { Button } from "~/components/ui/button";
 import { MiddleTruncate } from "~/components/ui/middle-truncate";
@@ -320,7 +319,6 @@ export function InspectorSection({
 export function InspectorCopyButton({ value, label }: { value: string; label: string }) {
   const ref = useRef<HTMLButtonElement>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
-    onCopy: () => showAnchoredCopySuccessToast(ref),
     onError: (error) => showAnchoredCopyErrorToast(ref, error),
     timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
   });

@@ -78,6 +78,7 @@ const fixture = Effect.gen(function* () {
         {
           projectId: localProjectId,
           title: "Original source folder",
+          hasCustomTitle: false,
           workspaceRoot: copy.repositories[0]!.path,
           defaultModelSelection: null,
           defaultThreadEnvMode: null,

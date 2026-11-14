@@ -298,9 +298,10 @@ function LinkRequestSheet(props: {
         keyboardShouldPersistTaps="handled"
       >
         <View className="gap-1">
+          {/* fork: fleet-connections */}
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
-            Agents here can then launch, message and wait on threads there. It appears in that
-            machine's Connections, where it can be revoked.
+            Agents here can then launch, message and wait on threads there. It appears under Devices
+            with access in that machine's Sharing & access, where it can be revoked.
           </Text>
           {item.url !== undefined && target.kind === "machine" ? (
             <Text className="font-sans text-xs text-foreground-muted" numberOfLines={1}>
@@ -375,7 +376,7 @@ function LinkRequestSheet(props: {
         {useExisting ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
             This environment is already linked to {targetName}. The agent can use that link as it
-            is; change its access in Settings → Connections.
+            is; change its access in Settings → Environments.
           </Text>
         ) : target.kind === "none" ? null : (
           <>
@@ -393,9 +394,10 @@ function LinkRequestSheet(props: {
                   textContentType="oneTimeCode"
                   spellCheck={false}
                 />
+                {/* fork: fleet-connections */}
                 <Text className="font-sans text-xs text-foreground-muted">
-                  Create a link on {targetName}: Settings → Connections → Create link, then paste
-                  its code here.
+                  Create a link on {targetName}: Settings → Sharing & access → Devices with access →
+                  Create link, then paste its code here.
                 </Text>
               </View>
             )}

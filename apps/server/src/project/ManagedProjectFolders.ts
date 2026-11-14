@@ -70,6 +70,10 @@ export class ScratchProjectError extends Schema.TaggedError<ScratchProjectError>
   }
 }
 
+/** Where No project threads keep their folders, whether or not this T3 home allows them. */
+export const scratchFolderRoot = (baseDir: string, path: Path.Path) =>
+  path.resolve(baseDir, "scratch");
+
 export type ScratchError = ScratchUnavailableError | ScratchFolderError | ScratchProjectError;
 
 // The spawner checks cwd before spawning, so NotFound from spawn itself means a missing executable.
@@ -264,7 +268,7 @@ const make = Effect.gen(function* () {
         (repositoryRoot): Effect.Effect<Result.Result<string, ScratchUnavailableError>> => {
           if (repositoryRoot === null) {
             // fork: mini-managed-projects
-            return Effect.succeed(Result.succeed(path.resolve(managedRoot, "scratch")));
+            return Effect.succeed(Result.succeed(scratchFolderRoot(managedRoot, path)));
           }
           const unavailable = new ScratchUnavailableError({
             baseDir: managedRoot, // fork: mini-managed-projects
@@ -273,15 +277,18 @@ const make = Effect.gen(function* () {
           return Effect.logWarning(unavailable.message).pipe(Effect.as(Result.fail(unavailable)));
         },
       ),
-      Effect.catchCause((cause) =>
-        Cause.hasInterrupts(cause)
-          ? Effect.interrupt
-          : Effect.succeed(Result.fail(new ScratchUnavailableError({ baseDir: config.baseDir }))),
-      ),
     ),
-    Duration.infinity,
+    // A failed git check (say, a timeout on a busy machine) is not an answer; ask again next time.
+    Exit.match({ onSuccess: () => Duration.infinity, onFailure: () => Duration.zero }),
   );
-  const scratchProbe = probe.pipe(Effect.onInterrupt(() => invalidate));
+  const scratchProbe = probe.pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.interrupt
+        : Effect.succeed(Result.fail(new ScratchUnavailableError({ baseDir: config.baseDir }))),
+    ),
+    Effect.onInterrupt(() => invalidate),
+  );
   // A symlinked scratch folder lets the No project live at either the link or its target.
   const scratchProjectRoot = (root: string) =>
     fileSystem.realPath(root).pipe(

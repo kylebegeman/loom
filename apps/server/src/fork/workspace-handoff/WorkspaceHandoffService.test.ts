@@ -50,6 +50,7 @@ const realClones = (workspaceRoot: string) =>
                 {
                   projectId: ProjectId.make("destination-project"),
                   title: "Destination",
+                  hasCustomTitle: false,
                   workspaceRoot,
                   defaultModelSelection: null,
                   defaultThreadEnvMode: null,

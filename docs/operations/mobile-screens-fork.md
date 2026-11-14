@@ -1,13 +1,13 @@
 # Building the mobile Screens dependency
 
 The mobile v5 stack uses a committed tarball from the
-[T3 Screens fork](https://github.com/PixPMusic/react-native-screens/tree/t3-v5.0.0-t3.48).
+[T3 Screens fork](https://github.com/pingdotgg/react-native-screens/tree/t3-v5.0.0-t3.50).
 The fork owns the general integration changes. Loom applies a narrow native
 navigation patch through `pnpm-workspace.yaml`'s `patchedDependencies`.
 Each archive includes compiled JavaScript, declarations, native source and
 `t3-fork.json` recording its version, source commit and upstream base.
 
-The [local patch](../../patches/react-native-screens@5.0.0-t3.48.patch) exposes
+The [local patch](../../patches/react-native-screens@5.0.0-t3.50.patch) exposes
 UIKit's `hidesBottomBarWhenPushed` on `Stack.Screen` and an explicit
 `Stack.Host.managesTabBarVisibility` policy. Compact workspace stacks enable
 that policy before their root first appears, so a fresh Search tab restores the

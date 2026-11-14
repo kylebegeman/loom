@@ -104,8 +104,9 @@ const environmentLinkCommand = Command.make("link", {
   ),
 }).pipe(
   Command.withDescription(
+    // fork: fleet-connections
     // fork: brand
-    "Link another Loom environment, so agents here can work there. It shows up there under Settings → Connections, where it can be revoked.",
+    "Link another Loom environment, so agents here can work there. It shows up there under Devices with access in Settings → Sharing & access, where it can be revoked.",
   ),
   Command.withHandler((flags) =>
     runWithPeerLinks(flags, (links) =>
@@ -146,7 +147,7 @@ const environmentUnlinkCommand = Command.make("unlink", {
   ),
 }).pipe(
   Command.withDescription(
-    "Forget a linked environment here. Revoke it in that environment's Connections to end its session there too.",
+    "Forget a linked environment here. Revoke it in that environment's Sharing & access to end its session there too.",
   ),
   Command.withHandler((flags) =>
     runWithPeerLinks(flags, (links) =>
@@ -154,7 +155,7 @@ const environmentUnlinkCommand = Command.make("unlink", {
         const removed = yield* links.unlink(EnvironmentId.make(flags.environmentId));
         yield* Console.log(
           removed
-            ? `Forgot ${flags.environmentId}. Revoke it in that environment's Connections to end its session there.\n`
+            ? `Forgot ${flags.environmentId}. Revoke it in that environment's Sharing & access to end its session there.\n`
             : `No linked environment ${flags.environmentId}.\n`,
         );
       }),

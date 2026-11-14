@@ -59,6 +59,8 @@ import { useProjects } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";
 import { withKnownPullRequestSummary } from "../../state/use-thread-pr";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";
+import { workspaceConnections } from "../../state/workspace";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
   resolveMobileProjectGroupingSettings,
@@ -84,7 +86,8 @@ import {
 import { startOpeningDetail } from "./workspace/useSelectWorkspaceDetail";
 import { useWorkspaceTabs } from "./workspace/WorkspaceTabsContext";
 import { HomeListOptionsProvider } from "../home/home-list-options";
-import { newTaskDestination } from "../threads/new-task-project-selection";
+import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "../home/homeThreadList";
+import { newTaskDestination, newTaskFilteredProject } from "../threads/new-task-project-selection";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { PaneContext } from "../../components/ui/Pane";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
@@ -115,7 +118,7 @@ import {
   type WorkspaceTabHistory,
 } from "./workspace/workspace-tab-navigation";
 import { settingsNavigationState } from "../settings/settings-navigation";
-import type { WorkspaceTab } from "./workspace/workspace-tabs-state";
+import { workspaceTabOf, type WorkspaceTab } from "./workspace/workspace-tabs-state";
 import { workspacePrimaryTab } from "./workspace/workspace-primary-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { SettingsWorkspaceLayout } from "../settings/SettingsWorkspaceLayout";
@@ -609,7 +612,7 @@ function AdaptiveWorkspaceLayoutContent(
       if (!preserveOrigin) {
         workspace?.dispatch({
           type: "select",
-          tab: Platform.OS === "ios" || detail.name === "Thread" ? "threads" : "pullRequests",
+          tab: Platform.OS === "ios" ? "threads" : workspaceTabOf(detail.name),
         });
       }
       startOpeningDetail(detail);
@@ -655,12 +658,38 @@ function AdaptiveWorkspaceLayoutContent(
         : undefined;
     const preferences = appAtomRegistry.get(mobilePreferencesAtom);
     const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
+    // Resolve the thread list's filter as useHomeListOptions does: a removed connection's filter reads as all.
+    const listFilters = saved?.threadListFilters;
+    const listEnvironmentId =
+      listFilters?.environmentId != null &&
+      appAtomRegistry.get(savedConnectionsByIdAtom)[listFilters.environmentId] !== undefined
+        ? listFilters.environmentId
+        : null;
+    const filteredScope = resolveHomeProjectFilterScope(
+      buildHomeProjectScopes({ projects, environmentId: listEnvironmentId, projectGroupingMode }),
+      projects,
+      { selectedProjectKey: listFilters?.projectKey ?? null, projectGroupingMode },
+    );
+    const connectedEnvironmentIds = new Set(
+      appAtomRegistry
+        .get(workspaceConnections.environmentsAtom)
+        .filter((environment) => environment.connectionState === "connected")
+        .map((environment) => environment.environmentId),
+    );
     handleSelectThreadRoute(
       newTaskDestination({
         projects,
         requestId: uuidv4(),
         useLastProject: saved?.useLastProjectForNewThreads,
         currentProject: environmentId && projectId ? { environmentId, projectId } : undefined,
+        filteredProject: filteredScope
+          ? newTaskFilteredProject(
+              filteredScope,
+              listEnvironmentId,
+              connectedEnvironmentIds,
+              saved?.lastThreadProject,
+            )
+          : undefined,
         lastProject: saved?.lastThreadProject,
       }),
     );

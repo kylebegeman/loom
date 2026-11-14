@@ -10,6 +10,7 @@ import {
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as Control from "../../orchestration-v2/ProviderTurnControlService.ts";
 import * as Projections from "../../orchestration-v2/ProjectionStore.ts";
 import * as Sessions from "../../orchestration-v2/ProviderSessionManager.ts";
@@ -42,6 +43,7 @@ it.effect(
             Layer.mock(Sessions.ProviderSessionManagerV2)({
               get: () => Effect.succeedSome(session),
             }),
+            Layer.mock(EventSink.EventSinkV2)({}),
             Layer.mock(Projections.ProjectionStoreV2)({
               getProviderControlContext: () =>
                 Effect.sync(

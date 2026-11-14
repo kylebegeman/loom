@@ -2,6 +2,7 @@ import type { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Path from "effect/Path";
@@ -12,7 +13,9 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts";
+import { ThreadWorktreeRestore, WorktreeRecreateError } from "./restoreMissingWorktree.ts";
 import * as SetupMarker from "./setupMarker.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
@@ -30,6 +33,9 @@ const RecoveryMarkerCodec = Schema.fromJsonString(RecoveryMarker);
 const decodeRecoveryMarker = Schema.decodeEffect(RecoveryMarkerCodec);
 const encodeRecoveryMarker = Schema.encodeEffect(RecoveryMarkerCodec);
 
+// `git worktree remove` skips pnpm junctions on Windows, leaving these behind without a checkout.
+const LEFTOVER_WORKTREE_ENTRIES = new Set(["node_modules", ".next"]);
+
 /** Restores released checkouts, retaining a retry marker until setup succeeds. */
 export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* (input: {
   readonly threadId: ThreadId;
@@ -38,6 +44,8 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   readonly branch: string;
   /** Set when the caller already holds this worktree lease. */
   readonly workspaceLeaseHeld?: boolean;
+  /** Set for server-managed paths, where a folder of only leftovers may be replaced. */
+  readonly clearLeftovers?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -48,8 +56,23 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   const cwd = path.resolve(input.worktreePath);
   // The marker survives failed creation, setup, and host restarts. It lives in T3 home,
   // outside the repository, so Git cannot publish it or confuse it with user work.
+  // Only folders holding nothing but leftovers are cleared, never user files.
+  const isLeftoverFolder = Effect.gen(function* () {
+    if (yield* fs.exists(path.join(cwd, ".git"))) return false;
+    const entries = yield* fs.readDirectory(cwd);
+    for (const entry of entries) {
+      if (!LEFTOVER_WORKTREE_ENTRIES.has(entry)) return false;
+      if ((yield* fs.stat(path.join(cwd, entry))).type !== "Directory") return false;
+    }
+    return true;
+  }).pipe(Effect.orElseSucceed(() => false));
   const restore = Effect.gen(function* () {
-    const exists = yield* fs.exists(cwd);
+    let exists = yield* fs.exists(cwd);
+    if (exists && input.clearLeftovers === true && (yield* isLeftoverFolder)) {
+      // `git worktree add` refuses a non-empty target.
+      yield* fs.remove(cwd, { recursive: true });
+      exists = false;
+    }
     if (exists && !(yield* SetupMarker.exists(cwd))) return;
     yield* tracker.begin({
       threadId: input.threadId,
@@ -93,9 +116,13 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           );
           // Only a thread with no saved work may start over from the project's current branch.
           if (ready.length === 0) {
-            // Push keeps the tracking ref current, so recovery reads it without fetching.
-            const pushedRef = `refs/remotes/origin/${input.branch}`;
-            if (yield* git.hasCommit({ cwd: root, refName: pushedRef }))
+            // The only remote is not always named origin. Push keeps its tracking ref current.
+            const remoteName = yield* git
+              .resolvePrimaryRemoteName(root)
+              .pipe(Effect.orElseSucceed(() => null));
+            const pushedRef =
+              remoteName === null ? null : `refs/remotes/${remoteName}/${input.branch}`;
+            if (pushedRef !== null && (yield* git.hasCommit({ cwd: root, refName: pushedRef })))
               return { cwd: root, refName: pushedRef, newRefName: input.branch, path: cwd };
             // Recovery can follow an external checkout, before the status cache expires.
             yield* git.invalidateLocalStatus(root);
@@ -110,18 +137,19 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
                 path: cwd,
               };
             }
-            if (yield* git.hasCommit({ cwd: root, refName: "refs/remotes/origin/HEAD" })) {
+            const remoteHead = `refs/remotes/${remoteName}/HEAD`;
+            if (remoteName !== null && (yield* git.hasCommit({ cwd: root, refName: remoteHead }))) {
               const { commitSha } = yield* git.resolveRemoteTrackingCommit({
                 cwd: root,
                 refName: "HEAD",
-                fallbackRemoteName: "origin",
+                fallbackRemoteName: remoteName,
               });
               // Start from the commit so the thread branch does not track the default branch.
               return {
                 cwd: root,
                 refName: commitSha,
                 newRefName: input.branch,
-                baseRefName: "refs/remotes/origin/HEAD",
+                baseRefName: remoteHead,
                 path: cwd,
               };
             }
@@ -261,3 +289,29 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   });
   return yield* input.workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
 });
+
+// Sends restore a released checkout the way turn start does, so its saved work and setup return.
+export const layerThreadWorktreeRestore = Layer.effect(
+  ThreadWorktreeRestore,
+  Effect.gen(function* () {
+    const context = yield* Effect.context<Effect.Services<ReturnType<typeof restoreWorktree>>>();
+    const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+    return {
+      restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread) {
+        const { worktreePath, branch } = thread;
+        if (worktreePath === null || branch === null) return;
+        if (!(yield* isManagedWorktreePath(worktreePath))) return;
+        yield* restoreWorktree({
+          threadId: thread.id,
+          projectId: thread.projectId,
+          worktreePath,
+          branch,
+          clearLeftovers: true,
+        }).pipe(
+          Effect.provide(context),
+          Effect.mapError((cause) => new WorktreeRecreateError({ worktreePath, branch, cause })),
+        );
+      }),
+    };
+  }),
+);

@@ -18,10 +18,7 @@ import { useMemo, useState } from "react";
 import { Platform } from "react-native";
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import {
-  pickableProjectGroups,
-  resolveScratchProjectScopeKey,
-} from "@t3tools/client-runtime/state/project-grouping";
+import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 
 import { useProjects } from "../../state/entities";
 import { steadyNavigationThreadShellsAtom } from "../../state/threads";
@@ -35,8 +32,16 @@ import {
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
 import { HomeScreen } from "./HomeScreen";
 import { useHomeListOptions } from "./home-list-options";
-import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
-import { buildHomeProjectScopes } from "./homeThreadList";
+import {
+  runWhenHomeCovered,
+  useAtomValueWhileVisible,
+  useHomeRouteVisible,
+} from "./home-route-visibility";
+import {
+  buildHomeProjectScopes,
+  resolveHomeProjectFilterScope,
+  sortHomeProjectScopes,
+} from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
@@ -79,14 +84,17 @@ export function HomeRouteScreen() {
     else if (workspace) workspace.dispatch({ type: "query", query, tab: "threads" });
     else setLocalSearchQuery(query);
   };
+  // Split layouts keep the query; only the stacked layout opens the thread over the list.
+  // Android's search field keeps its own open state, which a cleared query would leave open.
+  const clearsSearchOnOpen = Platform.OS !== "android" && !layout.usesSplitView;
+  const selectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) => {
+    if (searchQuery !== "" && clearsSearchOnOpen && workspace)
+      runWhenHomeCovered(() => workspace.cancelSearch("threads"));
+    selectDetail({ name: "Thread", params });
+  };
   // fork: library -- live threads open here; Library history falls back below
   const selectLiveThread = (thread: EnvironmentThreadShell) =>
-    selectDetail({
-      name: "Thread",
-      params: { environmentId: String(thread.environmentId), threadId: String(thread.id) },
-    });
-  const selectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) =>
-    selectDetail({ name: "Thread", params });
+    selectThreadRoute({ environmentId: String(thread.environmentId), threadId: String(thread.id) });
   // fork: library - Threads on unreachable computers open their saved Library history.
   const libraryHome = useHomeLibraryProjects(selectLiveThread);
   const handleSelectThread = libraryHome.selectThread;
@@ -132,34 +140,36 @@ export function HomeRouteScreen() {
     setSelectedProjectKey,
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
-  // A legacy per-environment scratch key resolves here on every render; the stored
-  // value is only rewritten when the user picks a filter.
-  // fork: library
-  const resolvedProjectKey = isLibraryProjectScopeKey(listOptions.selectedProjectKey)
-    ? listOptions.selectedProjectKey
-    : resolveScratchProjectScopeKey(listOptions.selectedProjectKey, projects, {
-        sidebarProjectGroupingMode: listOptions.projectGroupingMode,
-        sidebarProjectGroupingOverrides: {},
-      });
-  // fork: library -- scopes feed the Library project filter below
   const projectScopes = useMemo(
     () =>
-      pickableProjectGroups(
-        buildHomeProjectScopes({
-          projects,
-          environmentId: selectedEnvironmentId,
-          projectGroupingMode: listOptions.projectGroupingMode,
-        }),
-      ), // fork: library
+      buildHomeProjectScopes({
+        projects,
+        environmentId: selectedEnvironmentId,
+        projectGroupingMode: listOptions.projectGroupingMode,
+      }),
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
-  const projectFilter = useLibraryProjectFilter(projectScopes, resolvedProjectKey); // fork: library
+  const projectFilterGroups = useMemo(
+    () =>
+      pickableProjectGroups(
+        sortHomeProjectScopes({
+          scopes: projectScopes,
+          threads,
+          pendingTasks: [],
+          projectSortOrder: "updated_at",
+        }),
+      ),
+    [projectScopes, threads],
+  );
+  // fork: library -- a Library project key passes through; local keys resolve as upstream's do
+  const selectedProjectKey = isLibraryProjectScopeKey(listOptions.selectedProjectKey)
+    ? listOptions.selectedProjectKey // fork: library
+    : (resolveHomeProjectFilterScope(projectScopes, projects, listOptions)?.key ?? null);
+  const projectFilter = useLibraryProjectFilter(
+    projectFilterGroups, // fork: library
+    selectedProjectKey, // fork: library
+  ); // fork: library
   const projectFilterOptions = projectFilter.options; // fork: library
-  const selectedProjectKey =
-    isLibraryProjectScopeKey(resolvedProjectKey) || // fork: library
-    projectFilterOptions.some((project) => project.key === resolvedProjectKey)
-      ? resolvedProjectKey
-      : null;
 
   // fork: library - A selected Library project leads the New task choices.
   const startConversation = () => libraryHome.startConversation(selectedProjectKey, startNewTask); // fork: library
@@ -248,6 +258,7 @@ export function HomeRouteScreen() {
           selectedEnvironmentId={selectedEnvironmentId}
           selectedProjectKey={selectedProjectKey}
           threads={threads}
+          visible={visible}
         />
         <ThreadUndoNotice visible={visible} />
       </>

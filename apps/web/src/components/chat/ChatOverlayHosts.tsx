@@ -205,12 +205,15 @@ export function RevertConfirmHost(props: {
   readonly checkpoints: OrchestrationV2ThreadProjection["checkpoints"] | undefined;
   // fork: project-lifecycle
   readonly canOperate: boolean;
+  readonly worktreePath: string | null;
   readonly onConfirm: (pending: PendingRevert, restoreFiles: boolean) => void;
   readonly onFork: (checkpointId: string) => void;
 }) {
   const pending = useThreadOverlay(revertConfirmAtom, props.threadKey);
+  // The server refuses file restore outside an isolated worktree.
   const canRestoreFiles =
     pending !== null &&
+    props.worktreePath !== null &&
     pending.canRestoreFiles && // fork: project-lifecycle
     // fork: project-lifecycle -- side-scope rollbacks name their checkpoint; turn counts cannot address them.
     (pending.checkpointId === null

@@ -61,6 +61,7 @@ vi.mock("../../state/use-thread-composer-state", () => ({
   useThreadComposerState: () => ({
     queueHeld: true,
     resumableRunId: null,
+    canResume: true,
     selectedThreadFeed: [],
     selectedThreadActivityRun: null,
     activeWorkStartedAt: null,
