@@ -1,14 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
-import {
-  linkableMachines,
-  linkedEnvironmentNames,
-  offersLinkedEnvironments,
-} from "@t3tools/client-runtime/link-request";
+import { agentReachable, reachesOverLinks } from "@t3tools/client-runtime/fork"; // fork: account-links
+import { linkableMachines, linkedEnvironmentNames } from "@t3tools/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@t3tools/client-runtime/state/peerLinks";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useEffectEvent, useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { useAgentLinkReach } from "../fork/connections/accountLinksState"; // fork: account-links
 import { useEnvironments } from "./environments";
 import { relayEnvironmentDiscovery } from "./relay";
 import { useEnvironmentQuery } from "./query";
@@ -25,17 +23,20 @@ export function useLinkedEnvironments(
   environmentId: EnvironmentId | null,
 ): ReadonlyMap<EnvironmentId, string> {
   const { environments } = useEnvironments();
-  const offered = offersLinkedEnvironments(
-    environments.find((environment) => environment.environmentId === environmentId)?.serverConfig,
-  );
+  const reach = useAgentLinkReach(environmentId); // fork: account-links
+  const offered = reachesOverLinks(reach); // fork: account-links
   const links = useEnvironmentQuery(
     offered && environmentId !== null
       ? peerLinkEnvironment.list({ environmentId, input: {} })
       : null,
   );
   return useMemo(
-    () => linkedEnvironmentNames({ links: offered ? (links.data?.links ?? []) : [], environments }),
-    [environments, links.data, offered],
+    () =>
+      linkedEnvironmentNames({
+        links: offered ? agentReachable(reach, links.data?.links ?? []) : [], // fork: account-links
+        environments,
+      }),
+    [environments, links.data, offered, reach], // fork: account-links
   );
 }
 

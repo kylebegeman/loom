@@ -47,7 +47,8 @@ Agents on one of your computers can start, message and wait on threads on your
 other computers. Loom links every pair of computers enrolled with your Library
 when a computer joins, when your computer list changes, and every few minutes
 after that. It renews each link before it expires. These links work without the
-Linked environments beta.
+Linked environments beta, and typing `@` in the composer offers those computers and
+their threads.
 
 To turn this off or choose what agents may do, open **Account > Agents across your
 computers** on iPhone, or **Settings > Computers > Account** on web and desktop.

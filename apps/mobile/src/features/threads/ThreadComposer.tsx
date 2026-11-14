@@ -105,8 +105,8 @@ import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
-import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
-import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
+import { agentReachable } from "@t3tools/client-runtime/fork"; // fork: account-links
+import { useAgentLinkReach } from "../../fork/connections/accountLinksState"; // fork: account-links
 import {
   ComposerDictationCancelAction,
   ComposerDictationDraftContent,
@@ -126,7 +126,6 @@ import {
 
 export const COMPOSER_COLLAPSED_CHROME = 60;
 
-const NO_MACHINES: ReadonlyArray<ComposerEnvironmentCandidate> = [];
 const COLLAPSED_EDITOR_DEFAULT_INSET = 6;
 // iOS puts line-height slack above glyphs. DM Sans's lowercase midline is
 // descender (0.31em) + half x-height (0.504em) above the line bottom.
@@ -543,6 +542,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   };
 
   const mentionableEnvironments = useMentionableEnvironments();
+  const machineReach = useAgentLinkReach(props.environmentId); // fork: account-links
   // Mentions name any model for the agent, so they aren't limited to models this thread can switch to.
   const mentionModelOptions = buildModelOptions(
     props.serverConfig,
@@ -555,9 +555,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     ownerKey: composerDraftKey,
     environmentId: props.environmentId,
     threadShells: useVisibleThreadShells(),
-    environments: offersLinkedEnvironments(props.serverConfig)
-      ? mentionableEnvironments
-      : NO_MACHINES,
+    environments: agentReachable(machineReach, mentionableEnvironments), // fork: account-links
     linkedEnvironments: useLinkedEnvironments(props.environmentId),
     currentThreadId: props.selectedThread.id,
     projectCwd: props.projectCwd,
