@@ -30,6 +30,9 @@ const RecoveryMarkerCodec = Schema.fromJsonString(RecoveryMarker);
 const decodeRecoveryMarker = Schema.decodeEffect(RecoveryMarkerCodec);
 const encodeRecoveryMarker = Schema.encodeEffect(RecoveryMarkerCodec);
 
+// `git worktree remove` skips pnpm junctions on Windows, leaving these behind without a checkout.
+const LEFTOVER_WORKTREE_ENTRIES = new Set(["node_modules", ".next"]);
+
 /** Restores released checkouts, retaining a retry marker until setup succeeds. */
 export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* (input: {
   readonly threadId: ThreadId;
@@ -38,6 +41,8 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   readonly branch: string;
   /** Set when the caller already holds this worktree lease. */
   readonly workspaceLeaseHeld?: boolean;
+  /** Set for server-managed paths, where a folder of only leftovers may be replaced. */
+  readonly clearLeftovers?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -48,8 +53,23 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   const cwd = path.resolve(input.worktreePath);
   // The marker survives failed creation, setup, and host restarts. It lives in T3 home,
   // outside the repository, so Git cannot publish it or confuse it with user work.
+  // Only folders holding nothing but leftovers are cleared, never user files.
+  const isLeftoverFolder = Effect.gen(function* () {
+    if (yield* fs.exists(path.join(cwd, ".git"))) return false;
+    const entries = yield* fs.readDirectory(cwd);
+    for (const entry of entries) {
+      if (!LEFTOVER_WORKTREE_ENTRIES.has(entry)) return false;
+      if ((yield* fs.stat(path.join(cwd, entry))).type !== "Directory") return false;
+    }
+    return true;
+  }).pipe(Effect.orElseSucceed(() => false));
   const restore = Effect.gen(function* () {
-    const exists = yield* fs.exists(cwd);
+    let exists = yield* fs.exists(cwd);
+    if (exists && input.clearLeftovers === true && (yield* isLeftoverFolder)) {
+      // `git worktree add` refuses a non-empty target.
+      yield* fs.remove(cwd, { recursive: true });
+      exists = false;
+    }
     if (exists && !(yield* SetupMarker.exists(cwd))) return;
     yield* tracker.begin({
       threadId: input.threadId,

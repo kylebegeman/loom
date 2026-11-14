@@ -910,7 +910,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         status: "authenticated",
         ...(!routed && capabilities.email ? { email: capabilities.email } : {}), // fork: switchboard
         ...(!routed && capabilities.workspaceId ? { workspaceId: capabilities.workspaceId } : {}), // fork: switchboard
-        ...(authMetadata ? authMetadata : {}),
+        ...(!routed && authMetadata ? authMetadata : {}), // fork: switchboard
         // fork: switchboard. The hub picks the account per request, so a routed
         // probe reports neither the local login nor its allowances.
         ...(routed ? { type: "switchboard", label: "Switchboard" } : {}), // fork: switchboard

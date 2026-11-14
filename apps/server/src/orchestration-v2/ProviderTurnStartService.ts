@@ -689,13 +689,15 @@ export const layer: Layer.Layer<
             const exists = yield* fileSystem
               .exists(worktreePath)
               .pipe(Effect.orElseSucceed(() => true));
-            if (exists || (yield* isManagedWorktreePath(worktreePath)))
+            const managed = yield* isManagedWorktreePath(worktreePath);
+            if (exists || managed)
               yield* restoreWorktree({
                 threadId: projection.thread.id,
                 projectId: projection.thread.projectId, // fork: project-lifecycle
                 worktreePath,
                 branch,
                 workspaceLeaseHeld: true,
+                clearLeftovers: managed,
               });
           } else {
             // fork: mini-native-retention -- an archived Scratch checkout comes back before setup.

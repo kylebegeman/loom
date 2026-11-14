@@ -1676,10 +1676,12 @@ const make = Effect.gen(function* () {
     );
     if (!snapshot) return yield* new ServerBrowserTabNotFoundError({ threadId, tabId });
     return yield* Effect.tryPromise({
-      // fork: browser-timeout-recovery -- a restored tab is usable once its initial navigation lands.
+      // fork: browser-timeout-recovery -- a restored tab is usable once its initial navigation
+      // lands; a new tab is not, so its viewer can Stop a pending first navigation.
       try: async () => {
+        const recovering = recoveryPages.has(tabKey(threadId, tabId));
         const tab = await ensureTab(snapshot);
-        await tab.initialNavigation;
+        if (recovering) await tab.initialNavigation;
         return tab;
       },
       catch: (cause) => (isTabNotFound(cause) ? cause : new ServerBrowserLaunchError({ cause })),
