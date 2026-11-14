@@ -262,13 +262,21 @@ describe("ReachCloudflare", () => {
         apis.script("allowlist.update", cloudflareError(400, 20_021, "unsupported"));
         apis.script("ratelimit.update", cloudflareError(400, 20_021, "unsupported"));
         const stale = yield* cloudflare.ensureEdgeRules({ zoneId: ZONE_ID, zone: ZONE });
-        expect(stale).toMatchObject({ allowlist: "stale", rateLimit: "ready" });
+        expect(stale).toMatchObject({
+          allowlist: "stale",
+          allowlistError: "invalid",
+          rateLimit: "ready",
+        });
         expect(apis.rulesets.get(ReachCloudflare.WAF_PHASE)?.rules[0]?.expression).toBe(
           "(older expression)",
         );
 
         const updated = yield* cloudflare.ensureEdgeRules({ zoneId: ZONE_ID, zone: ZONE });
-        expect(updated).toMatchObject({ allowlist: "ready", rateLimit: "ready" });
+        expect(updated).toMatchObject({
+          allowlist: "ready",
+          allowlistError: null,
+          rateLimit: "ready",
+        });
         expect(apis.rulesets.get(ReachCloudflare.WAF_PHASE)?.rules[0]?.expression).toBe(
           WAF.expression,
         );

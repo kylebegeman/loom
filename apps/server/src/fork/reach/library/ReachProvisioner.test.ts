@@ -11,8 +11,14 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
-import { RATE_LIMIT_PHASE, reachTunnelTarget } from "./ReachCloudflare.ts";
-import { ReachProvisioner } from "./ReachProvisioner.ts";
+import { reachWafRule } from "@t3tools/shared/fork/reach";
+import { RATE_LIMIT_PHASE, WAF_PHASE, reachTunnelTarget } from "./ReachCloudflare.ts";
+import {
+  EDGE_RECHECK_INTERVAL,
+  ReachEdgeReconcilerLive,
+  ReachProvisioner,
+  edgeRetryDelay,
+} from "./ReachProvisioner.ts";
 import { freshComputer, ReachStore } from "./ReachStore.ts";
 import {
   ACCOUNT_ID,
@@ -43,6 +49,7 @@ const STARTED_AT = Date.parse("2026-10-24T12:00:00.000Z");
 const MOVED_ZONE = "moved.example.test";
 const MOVED_HOSTNAME = `studio-loom.${MOVED_ZONE}`;
 const DESKTOP_REDIRECT = "http://127.0.0.1:47123/loom/identity/callback";
+const WAF_RULE = reachWafRule(ZONE)!;
 /** A Library with Loom Identity and no reach. */
 const NO_REACH = { LOOM_REACH_ZONE: undefined, LOOM_REACH_CLOUDFLARE_TOKEN_FILE: undefined };
 
@@ -1022,6 +1029,78 @@ describe("ReachProvisioner zone changes", () => {
         });
       }),
     ),
+  );
+});
+
+describe("ReachProvisioner edge reconcile", () => {
+  it.effect(
+    "applies a changed allowlist with no computer ensuring and retries a refused PATCH",
+    () =>
+      withReach((fixture) =>
+        Effect.gen(function* () {
+          fixture.apis.addRule(WAF_PHASE, { ...WAF_RULE, expression: "(older expression)" });
+          fixture.apis.script("allowlist.update", cloudflareError(400, 20_021, "unsupported"));
+          expect(yield* fixture.provisioner.reconcileEdge).toBe("retry");
+          expect((yield* fixture.provisioner.list).setup.edge).toMatchObject({
+            allowlist: "stale",
+            lastError: "edge-failed",
+          });
+
+          expect(yield* fixture.provisioner.reconcileEdge).toBe("ready");
+          expect(fixture.apis.rulesets.get(WAF_PHASE)?.rules[0]?.expression).toBe(
+            WAF_RULE.expression,
+          );
+          const edge = (yield* fixture.provisioner.list).setup.edge;
+          expect(edge).toMatchObject({ allowlist: "ready" });
+          expect(edge).not.toHaveProperty("lastError");
+          expect(fixture.apis.tunnels.size).toBe(0);
+        }),
+      ),
+  );
+
+  it.effect("checks a ready edge again instead of trusting the last check", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* ensure(fixture, 1);
+        fixture.apis.clearCalls();
+        expect(yield* fixture.provisioner.reconcileEdge).toBe("ready");
+        expect(fixture.apis.steps).toEqual(["allowlist.get", "ratelimit.get"]);
+      }),
+    ),
+  );
+
+  it.effect("stays off and calls nothing on a Library without reach", () =>
+    withReach(
+      (fixture) =>
+        Effect.gen(function* () {
+          expect(yield* fixture.provisioner.reconcileEdge).toBe("off");
+          expect(fixture.apis.steps).toEqual([]);
+        }),
+      { env: NO_REACH },
+    ),
+  );
+
+  it.effect("runs at startup, backs off while not ready and rechecks a ready edge", () =>
+    Effect.gen(function* () {
+      const outcomes: Array<"ready" | "retry"> = ["retry", "retry", "ready", "ready"];
+      let calls = 0;
+      const provisioner = {
+        reconcileEdge: Effect.sync(() => outcomes[calls++] ?? "ready"),
+      } as unknown as ReachProvisioner["Service"];
+      yield* Layer.build(
+        ReachEdgeReconcilerLive.pipe(Layer.provide(Layer.succeed(ReachProvisioner, provisioner))),
+      );
+      yield* TestClock.adjust(0);
+      expect(calls).toBe(1);
+      yield* TestClock.adjust(edgeRetryDelay(0));
+      expect(calls).toBe(2);
+      yield* TestClock.adjust(edgeRetryDelay(1));
+      expect(calls).toBe(3);
+      yield* TestClock.adjust(edgeRetryDelay(0));
+      expect(calls).toBe(3);
+      yield* TestClock.adjust(EDGE_RECHECK_INTERVAL);
+      expect(calls).toBe(4);
+    }).pipe(Effect.scoped),
   );
 });
 

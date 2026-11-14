@@ -843,6 +843,7 @@ const ForkServicesLive = Layer.mergeAll(
     ),
   ),
   layerReachLibrary,
+  ReachProvisioner.ReachEdgeReconcilerLive.pipe(Layer.provide(layerReachLibrary)),
   layerAccountGateway,
   SwitchboardGateway.layer.pipe(
     Layer.provide(FetchHttpClient.layer),
