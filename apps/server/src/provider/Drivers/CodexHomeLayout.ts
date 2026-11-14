@@ -31,6 +31,9 @@ const KNOWN_SHARED_DIRECTORIES = [
 
 // auth.lock guards the shadow home's private auth.json.
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "auth.lock", "models_cache.json"]);
+// fork: codex-shadow-auth-lock -- auth.json's lock and temp files guard the private copy.
+const isPrivateEntry = (entryName: string) =>
+  PRIVATE_ENTRY_NAMES.has(entryName) || entryName.startsWith("auth.json.");
 // Finder maintains metadata separately for each directory, including shadow homes.
 // fork: codex-shadow-images -- Codex may create these in a shadow home before the shared one.
 // Keep their contents (and any existing links) when preparing the overlay again.
@@ -410,13 +413,14 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
   );
   const entries = new Set<string>(KNOWN_SHARED_DIRECTORIES);
   for (const entryName of sharedEntryNames) {
-    if (!PRIVATE_ENTRY_NAMES.has(entryName) && !SHADOW_LOCAL_ENTRY_NAMES.has(entryName)) {
+    if (!isPrivateEntry(entryName) && !SHADOW_LOCAL_ENTRY_NAMES.has(entryName)) {
       entries.add(entryName);
     }
   }
 
+  // Earlier setups linked private names the shared home has; drop those links, never files.
   yield* Effect.forEach(
-    PRIVATE_ENTRY_NAMES,
+    new Set([...PRIVATE_ENTRY_NAMES, ...sharedEntryNames.filter(isPrivateEntry)]),
     (entryName) =>
       entryName === "auth.json"
         ? Effect.void
@@ -432,7 +436,7 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
   yield* Effect.forEach(
     entries,
     (entryName) => {
-      if (PRIVATE_ENTRY_NAMES.has(entryName)) {
+      if (isPrivateEntry(entryName)) {
         return Effect.void;
       }
       return ensureSymlink({
