@@ -57,6 +57,7 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
   useSettingsEnvironmentMenu: () => null,
 }));
 vi.mock("./components/ScheduledTaskPromptField", () => ({ ScheduledTaskPromptField: () => null }));
+vi.mock("../../fork/path-picker/PathField", () => ({ PathField: () => null })); // fork: path-picker
 vi.mock("../layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => vi.fn(),
 }));
