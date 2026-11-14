@@ -1547,6 +1547,7 @@ apps/web/src/components/chat/QueuedRunsControl.browser.test.tsx	brand	1
 apps/web/src/components/chat/QueuedRunsControl.tsx	brand	1
 apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	brand	1
 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	brand	2
+apps/web/src/components/sidebar/SidebarUpdatePill.browser.test.tsx	brand	1
 apps/web/src/components/ui/standalone-page.tsx	brand	2
 apps/web/src/hooks/useOpenLocalWorkspace.ts	brand	1
 apps/web/src/hooks/useStartTriage.ts	brand	1
