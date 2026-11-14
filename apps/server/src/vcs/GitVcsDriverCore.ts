@@ -2351,6 +2351,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       unmerged = marked;
     }
+    // fork: source-control-cockpit -- a bare sequencer gets upstream's selected-file refusal before reset.
+    if (staging?.filePaths?.length && unmerged.length > 0 && (yield* readOperation(cwd)) === null) {
+      const sequencer = (yield* runGitStdout("GitVcsDriver.unmergedPaths.sequencer", cwd, [
+        "rev-parse",
+        "--git-path",
+        "sequencer",
+      ])).trim();
+      if (
+        yield* fileSystem
+          .exists(path.resolve(cwd, sequencer))
+          .pipe(Effect.orElseSucceed(() => false))
+      )
+        return;
+    }
     if (unmerged.length > 0) {
       return yield* new GitCommandError({
         operation: "GitVcsDriver.commit",
