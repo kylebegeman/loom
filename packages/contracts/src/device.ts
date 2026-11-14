@@ -602,7 +602,8 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
       settings_failed: "Could not read or save device settings.",
       hub_rejected: "The device hub could not complete the request.",
       package_manager_missing:
-        "Device support needs npm, which is not on the T3 server's PATH. Install npm (it comes with Node.js from nodejs.org), restart T3 Code, then retry.",
+        // fork: brand
+        "Device support needs npm, which is not on the T3 server's PATH. Install npm (it comes with Node.js from nodejs.org), restart Loom, then retry.",
     }[this.reason];
     return `Device ${this.operation} failed: ${explanation}`;
   }

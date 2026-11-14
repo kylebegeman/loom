@@ -692,6 +692,7 @@ packages/client-runtime/src/state/device.ts	brand	1
 packages/client-runtime/src/state/pullRequestDiffHttp.ts	brand	1
 packages/contracts/src/browserImport.ts	brand	1
 packages/contracts/src/t3ProjectFile.ts	brand	9
+packages/contracts/src/device.ts	brand	1
 packages/provider-acp-registry/src/server/driver.ts	brand	2
 packages/provider-acp/src/server/AcpSessionRuntime.ts	brand	1
 packages/provider-acp/src/server/adapter.ts	brand	2
