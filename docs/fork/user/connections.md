@@ -44,6 +44,11 @@ computer. On desktop and in a browser, **Later** sets the prompt aside and
 **Account > Add computer** lists it again with **Review**. If no request
 appears, enter the terminal's code in **Account > Add computer** instead.
 
+Approving also confirms it is you. Desktop apps and browsers ask for your
+passkey. Your iPhone asks for your passkey the first time and about once a month
+after that, and for Face ID or your passcode otherwise. If the passkey window
+does not open in a browser, allow pop-ups for Loom and approve again.
+
 After approval the command keeps running until the computer is ready, then
 prints where its history publishes and its remote access address. Codes expire
 after 15 minutes. If the command stops, run it again to resume the saved
@@ -56,8 +61,9 @@ A Linux or LoomOS machine needs:
 - An outbound HTTPS connection to your Library. No open ports are needed.
 - Loomhost set up on your Library, for remote access from other networks. Loom
   installs and updates Cloudflare's connector on the computer itself. Without
-  it, `loom join` finishes and says remote access is off. After your Library
-  has Loomhost, turn on **Loomhost** in the computer's details.
+  it, `loom join` finishes and says remote access is off for now. Once your
+  Library has Loomhost, the computer turns remote access on by itself within
+  about 15 minutes. Turning **Loomhost** off in its details keeps it off.
 
 ### One row per computer
 
