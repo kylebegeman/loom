@@ -137,6 +137,8 @@ export class LibraryService extends Context.Service<
       session: Pick<AuthenticatedSession, "subject" | "scopes" | "expiresAt">,
     ) => ReturnType<Recovery.LibraryRecoveryStore["Service"]["get"]>;
     readonly subscribeRefreshes: Stream.Stream<number>;
+    /** Asks subscribed clients to read again after a change the catalog did not make itself. */
+    readonly announceRefresh: Effect.Effect<void>;
     readonly projects: (input: {
       includeArchived?: boolean | undefined;
     }) => Effect.Effect<readonly LibraryProject[], LibraryError>;
@@ -1418,6 +1420,7 @@ const make = Effect.gen(function* () {
     readRecoveryGrant,
     registerComputer,
     subscribeRefreshes: SubscriptionRef.changes(refreshes),
+    announceRefresh: SubscriptionRef.update(refreshes, (revision) => revision + 1),
     createProject,
     updateProject,
     archiveProject,

@@ -44,6 +44,7 @@ it("keeps the chosen layout and computer draft across navigation and computer re
         environments={environments}
         isReady
         discoveredRows={null}
+        onPair={() => {}}
         renderComputerDetails={(environment) => (
           <input aria-label={`Settings for ${environment.label}`} defaultValue="" />
         )}

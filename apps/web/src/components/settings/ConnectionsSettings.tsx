@@ -317,6 +317,13 @@ function ConnectionsSettingsContent({
   // fork: directory-computers
   const [libraryPairing, setLibraryPairing] = useState<LibraryComputerPairing | null>(null);
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
+  // fork: directory-computers
+  const pairLibraryComputer = (environmentId: EnvironmentId, httpBaseUrl: string) => {
+    setRouteTarget(null);
+    setLibraryPairing({ environmentId, httpBaseUrl });
+    setSavedBackendError(null);
+    setAddBackendDialogOpen(true);
+  };
   const handleAddBackendDialogOpenChange = (open: boolean) => {
     setAddBackendDialogOpen(open);
     setLibraryPairing(null); // fork: directory-computers
@@ -1658,20 +1665,14 @@ function ConnectionsSettingsContent({
       workers={<ForkSettingsTopics page="/settings/connections" topics={["mini-offload"]} />}
       updates={<FleetUpdatesSection />}
       library={
-        <ComputerLibrarySettings
-          onPairComputer={(environmentId, httpBaseUrl) => {
-            setRouteTarget(null);
-            setLibraryPairing({ environmentId, httpBaseUrl });
-            setSavedBackendError(null);
-            setAddBackendDialogOpen(true);
-          }}
-        >
+        <ComputerLibrarySettings onPairComputer={pairLibraryComputer}>
           <LibrarySignInSettings />
         </ComputerLibrarySettings>
       }
     >
       <ComputerConnectionsHome
         primaryEnvironment={primaryEnvironment}
+        onPair={pairLibraryComputer} // fork: directory-computers
         environments={[...(primaryEnvironment ? [primaryEnvironment] : []), ...listedEnvironments]}
         renderComputerDetails={(environment) =>
           environment.environmentId === primaryEnvironmentId ? (

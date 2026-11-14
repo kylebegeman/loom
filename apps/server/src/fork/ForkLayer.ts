@@ -612,6 +612,7 @@ const layerAccountEnrollment = AccountEnrollment.layer.pipe(
       layerLibraryManagement,
       layerDirectory,
       layerLibraryPublisher,
+      layerLibraryService,
       layerDirectoryReporter,
       layerReachLibrary,
       LibraryPublishingCredential.layer,

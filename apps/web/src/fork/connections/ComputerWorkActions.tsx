@@ -33,13 +33,18 @@ import { environmentCatalog } from "~/connection/catalog";
 import { Alert, useAction } from "~/fork/apple-build-tooling/parts";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useComputerNextStep } from "../connection-health/useComputerNextStep";
+import type { PairLibraryComputer } from "../directory-computers/LibraryComputers";
+import { SavedIdentitySignIn } from "../identity/ComputerIdentityAccess";
 
 export function ComputerWorkActions({
   environment,
   presentation = "details",
+  onPair,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly presentation?: "card" | "row" | "details";
+  readonly onPair?: PairLibraryComputer | undefined;
 }) {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -53,14 +58,54 @@ export function ComputerWorkActions({
     AuthOrchestrationOperateScope,
   );
   const action = useAction();
+  const nextStep = useComputerNextStep(environment);
+  const connected = environment.entry.enabled && environment.connection.phase === "connected";
+  const repair =
+    nextStep?.action === "sign-in" ? (
+      <SavedIdentitySignIn entry={environment.entry} actionVariant="outline" />
+    ) : nextStep?.action === "pair" && onPair ? (
+      <Button
+        shape="pill"
+        size="xs"
+        variant="outline"
+        onClick={() => onPair(environment.environmentId, "")}
+      >
+        Pair instead
+      </Button>
+    ) : environment.entry.enabled && !connected ? (
+      <Button
+        shape="pill"
+        size="xs"
+        variant="outline"
+        disabled={
+          action.busy ||
+          (nextStep === null &&
+            ["connecting", "reconnecting", "unsupported"].includes(environment.connection.phase))
+        }
+        onClick={() =>
+          void action.act(async () => {
+            const result = await retryNow(environment.environmentId);
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          })
+        }
+      >
+        Reconnect
+      </Button>
+    ) : null;
+  const nextStepText = nextStep ? (
+    <p className="text-xs leading-relaxed wrap-anywhere text-muted-foreground">{nextStep.text}</p>
+  ) : null;
   if (environment.serverConfig?.environment.capabilities.supportsExecution === false) {
     return (
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        Stores your projects and conversations. Start work on one of your other computers.
-      </p>
+      <div className="space-y-2">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Stores your projects and conversations. Start work on one of your other computers.
+        </p>
+        {nextStepText}
+        {nextStep ? <div className="flex flex-wrap items-center gap-2">{repair}</div> : null}
+      </div>
     );
   }
-  const connected = environment.entry.enabled && environment.connection.phase === "connected";
   const scratchRoot = scratchWorkspaceRootFor(environment.environmentId);
   const canStartScratch =
     noProjectWorkspaceRoot(environment.connection.phase, environment.serverConfig) !== null;
@@ -106,12 +151,13 @@ export function ComputerWorkActions({
             : "space-y-4"
       }
     >
+      {nextStepText}
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {connected ? (
           <span>
             {agentsReady} {agentsReady === 1 ? "agent" : "agents"} ready
           </span>
-        ) : (
+        ) : nextStep ? null : (
           <span>Reconnect to start work</span>
         )}
         <span>
@@ -161,23 +207,7 @@ export function ComputerWorkActions({
             Enable
           </Button>
         ) : !connected ? (
-          <Button
-            shape="pill"
-            size="xs"
-            variant="outline"
-            disabled={
-              action.busy ||
-              ["connecting", "reconnecting", "unsupported"].includes(environment.connection.phase)
-            }
-            onClick={() =>
-              void action.act(async () => {
-                const result = await retryNow(environment.environmentId);
-                if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-              })
-            }
-          >
-            Reconnect
-          </Button>
+          repair
         ) : agentsReady === 0 ? (
           <Button
             shape="pill"
