@@ -131,6 +131,7 @@ import * as StorageCleanup from "../storageCleanup.ts";
 import { LOOM_SERVER_FEATURES } from "./features.ts";
 import { makeForkRpcAuth } from "./rpcAuthorization.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
+import { SwitchboardAccount } from "./switchboard/SwitchboardAccount.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
@@ -337,6 +338,7 @@ export const makeForkRpcLayer = (
         const naming = yield* withForkRuntime(ComputerNaming.ComputerNaming);
         const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
         const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
+        const switchboardAccount = yield* withForkRuntime(SwitchboardAccount);
         return otherForkRpcGroup.of({
           [ENROLL.computers]: () => auth.effect(ENROLL.computers, enrollment.computers(session)),
           [ENROLL.removeComputer]: (input) =>
@@ -374,6 +376,15 @@ export const makeForkRpcLayer = (
             ),
           [FORK_WS_METHODS.limits]: () =>
             auth.effect(FORK_WS_METHODS.limits, switchboard.readLimits),
+          [FORK_WS_METHODS.route]: () =>
+            auth.effect(FORK_WS_METHODS.route, switchboardAccount.status),
+          [FORK_WS_METHODS.reconnect]: () =>
+            auth.effect(FORK_WS_METHODS.reconnect, switchboardAccount.reconnect),
+          [FORK_WS_METHODS.revokeComputer]: (input) =>
+            auth.effect(
+              FORK_WS_METHODS.revokeComputer,
+              switchboardAccount.revokeComputer(input.environmentId),
+            ),
           ...(yield* withForkRuntime(makeProjectLibraryRpcHandlers(auth, session))),
           ...(yield* withForkRuntime(makeProjectCheckoutRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),

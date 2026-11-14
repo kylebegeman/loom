@@ -18,10 +18,18 @@ import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } 
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { readSharedCodexCatalog, SWITCHBOARD_CODEX_CATALOG_PATH } from "./serviceTier.ts";
-import { readSwitchboardCredential, resolveSwitchboardConfiguration } from "./switchboard.ts";
+import { SwitchboardClients } from "./SwitchboardClients.ts";
+import {
+  readSwitchboardCredential,
+  resolveSwitchboardController,
+  resolveSwitchboardHubConfiguration,
+  SWITCHBOARD_CONTROLLER_PATH,
+} from "./switchboard.ts";
 
-export const SWITCHBOARD_GATEWAY_PREFIX = "/api/loom/switchboard";
 const GATEWAY_ORIGIN = "http://127.0.0.1:8321";
+/** The controller reads a routed computer's picker and Ultrafast readback make. */
+const CONTROLLER_AVAILABILITY = `${SWITCHBOARD_CONTROLLER_PATH}/api/v1/availability`;
+const CONTROLLER_SERVICE_TIER = `${SWITCHBOARD_CONTROLLER_PATH}/api/v1/service-tier`;
 const POST_PATHS = new Set([
   "/v1/responses",
   "/v1/chat/completions",
@@ -41,6 +49,9 @@ const DROP_REQUEST = new Set([
   "sec-websocket-version",
   "sec-websocket-extensions",
   "sec-websocket-protocol",
+  // The hub's own key replaces whichever credential the computer sent.
+  "authorization",
+  "x-api-key",
 ]);
 const DROP_RESPONSE = new Set([
   "connection",
@@ -102,6 +113,7 @@ const make = Effect.gen(function* () {
   const paths = yield* Path.Path;
   const settings = yield* ServerSettingsService;
   const home = yield* HostProcess.HomeDirectory;
+  const clients = yield* SwitchboardClients;
   return SwitchboardGateway.of({
     forward: Effect.fn("SwitchboardGateway.forward")(function* (request, path) {
       if (environment.LOOM_SWITCHBOARD_SHARE_GATEWAY !== "true")
@@ -109,7 +121,12 @@ const make = Effect.gen(function* () {
       const [pathname, query] = path.split("?");
       const upgrade = request.headers.upgrade?.toLowerCase() === "websocket";
       const claude = pathname === "/v1/messages" || pathname === "/v1/messages/count_tokens";
-      const allowedQuery = query === undefined || (claude && path === `${pathname}?beta=true`);
+      const tierQuery =
+        pathname === CONTROLLER_SERVICE_TIER &&
+        query !== undefined &&
+        /^session=[A-Za-z0-9._%-]{1,512}&since=\d{1,16}$/u.test(query);
+      const allowedQuery =
+        query === undefined || tierQuery || (claude && path === `${pathname}?beta=true`);
       if (
         !pathname ||
         !allowedQuery ||
@@ -118,8 +135,11 @@ const make = Effect.gen(function* () {
           ? request.method !== "GET" || pathname !== "/v1/responses" || query !== undefined
           : !(
               (request.method === "GET" &&
-                (pathname === "/v1/models" || pathname === SWITCHBOARD_CODEX_CATALOG_PATH) &&
+                (pathname === "/v1/models" ||
+                  pathname === SWITCHBOARD_CODEX_CATALOG_PATH ||
+                  pathname === CONTROLLER_AVAILABILITY) &&
                 query === undefined) ||
+              (request.method === "GET" && tierQuery) ||
               (request.method === "POST" && POST_PATHS.has(pathname))
             ))
       )
@@ -137,7 +157,7 @@ const make = Effect.gen(function* () {
       if (key === undefined || !/^[a-f0-9]{64}$/u.test(key))
         return yield* new SwitchboardGatewayError({ reason: "authentication" });
       const config = yield* Effect.try({
-        try: () => resolveSwitchboardConfiguration(environment, platform),
+        try: () => resolveSwitchboardHubConfiguration(environment, platform),
         catch: () => new SwitchboardGatewayError({ reason: "unavailable" }),
       });
       const current = yield* readSwitchboardCredential(config.keyCommand, environment).pipe(
@@ -145,7 +165,13 @@ const make = Effect.gen(function* () {
       );
       if (Option.isNone(current) || !/^[a-f0-9]{64}$/u.test(Redacted.value(current.value)))
         return yield* new SwitchboardGatewayError({ reason: "unavailable" });
-      if (!NodeCrypto.timingSafeEqual(Buffer.from(key), Buffer.from(Redacted.value(current.value))))
+      const hubKey = Redacted.value(current.value);
+      // An account computer's own credential, or the shared key computers set up by hand still use.
+      const computer = yield* clients.authenticate(key);
+      if (
+        Option.isNone(computer) &&
+        !NodeCrypto.timingSafeEqual(Buffer.from(key), Buffer.from(hubKey))
+      )
         return yield* new SwitchboardGatewayError({ reason: "authentication" });
       if (pathname === SWITCHBOARD_CODEX_CATALOG_PATH) {
         const { providerInstances } = yield* settings.getSettings.pipe(
@@ -161,7 +187,19 @@ const make = Effect.gen(function* () {
           return yield* new SwitchboardGatewayError({ reason: "unavailable" });
         return HttpServerResponse.jsonUnsafe(catalog, { headers: NO_STORE });
       }
-      const upstream = GATEWAY_ORIGIN + path;
+      const controller = pathname === CONTROLLER_AVAILABILITY || tierQuery;
+      const controllerOrigin = controller
+        ? yield* Effect.try({
+            try: () => resolveSwitchboardController(environment),
+            catch: () => new SwitchboardGatewayError({ reason: "unavailable" }),
+          })
+        : null;
+      if (controller && controllerOrigin === null)
+        return yield* new SwitchboardGatewayError({ reason: "unavailable" });
+      const upstream =
+        controllerOrigin === null
+          ? GATEWAY_ORIGIN + path
+          : controllerOrigin + path.slice(SWITCHBOARD_CONTROLLER_PATH.length);
       const headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(request.headers)) {
         if (
@@ -170,6 +208,12 @@ const make = Effect.gen(function* () {
           !/^(cf-|x-forwarded-|x-loom-|x-t3-|x-switchboard-)/u.test(name)
         )
           headers[name] = value;
+      }
+      if (controllerOrigin === null) {
+        headers.authorization = `Bearer ${hubKey}`;
+        if (apiKey !== undefined) headers["x-api-key"] = hubKey;
+        // Attribution for Switchboard's ledger; the credential check above is the boundary.
+        if (Option.isSome(computer)) headers["x-switchboard-device"] = computer.value.device;
       }
       if (upgrade)
         return yield* Effect.scoped(

@@ -1,4 +1,7 @@
 import type { SwitchboardGateway } from "./switchboard/SwitchboardGateway.ts";
+import type { SwitchboardAccount } from "./switchboard/SwitchboardAccount.ts";
+import type { SwitchboardClients } from "./switchboard/SwitchboardClients.ts";
+import type { SwitchboardIssuer } from "./switchboard/SwitchboardIssuer.ts";
 import type { VaultOwnerLink } from "./vault/VaultOwnerLink.ts";
 import type { AccountWorkloads } from "./account-access/AccountWorkloads.ts";
 import type { AccountVaultMachineAuthority } from "./vault/AccountVaultMachineAuthority.ts";
@@ -106,6 +109,9 @@ import type { AccountGateway } from "./account-access/AccountGateway.ts";
 export type ForkServices =
   | AccountAccess
   | SwitchboardGateway
+  | SwitchboardAccount
+  | SwitchboardClients
+  | SwitchboardIssuer
   | AccountHost
   | AccountGateway
   | ClaudeWorktreeService

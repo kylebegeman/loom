@@ -183,6 +183,11 @@ export const REACH_ALLOWED_PATHS = [
   "/api/loom/switchboard/v1/chat/completions",
   "/api/loom/switchboard/v1/messages",
   "/api/loom/switchboard/v1/messages/count_tokens",
+  // An account computer trades a one-use Library ticket for its own credential.
+  "/api/loom/switchboard/enroll",
+  // The hub controller's model availability and Ultrafast readback, for routed computers.
+  "/api/loom/switchboard/controller/api/v1/availability",
+  "/api/loom/switchboard/controller/api/v1/service-tier",
   "/api/orchestration/shell",
   "/api/projects",
   "/api/projects/mutate",
