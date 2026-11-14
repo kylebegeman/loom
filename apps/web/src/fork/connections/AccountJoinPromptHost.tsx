@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
-  DialogClose,
+  DialogAction,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -195,9 +195,10 @@ function JoinPromptDialog({
           >
             {sending === "decline" ? "Declining..." : "Decline"}
           </Button>
-          <DialogClose disabled={sending !== null} render={<Button variant="outline" />}>
+          {/* Focus starts here: the prompt can open mid-typing, and Enter on a code could approve. */}
+          <DialogAction variant="outline" disabled={sending !== null} onClick={onLater}>
             Later
-          </DialogClose>
+          </DialogAction>
         </DialogFooter>
       </DialogPopup>
     </Dialog>
