@@ -466,7 +466,8 @@ keeps the credential and route in its server secret store, and `/bin/cat` on tha
 key command, so a Library outage changes nothing until the hub refuses the credential
 (`x-loom-switchboard: authentication` or `disabled`, a header only the gateway sets). Revoking on the hub is a
 rotation, because a member enrolls again at its next check. Removal from the account is
-what keeps a computer out.
+what keeps a computer out. An open Responses WebSocket ends as soon as its credential stops
+working, and every gateway socket ends after an hour, so none outlives its authentication.
 
 Environment settings outrank the account hub, except that a `LOOM_SWITCHBOARD_URL` naming
 the hub by any of its directory routes uses the computer's own credential. Computers set

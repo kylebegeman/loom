@@ -5,6 +5,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { SWITCHBOARD_MEMBERS_ROUTE, SWITCHBOARD_REDEEM_ROUTE } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -99,8 +100,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         const second = yield* Effect.gen(function* () {
           const clients = yield* Clients.SwitchboardClients;
           const first = Redacted.value(yield* clients.enroll("t".repeat(64)));
-          expect(yield* clients.authenticate(first)).toEqual(
-            Option.some({ device: "kyle-s-macbook-air" }),
+          expect(Option.map(yield* clients.authenticate(first), (c) => c.device)).toEqual(
+            Option.some("kyle-s-macbook-air"),
           );
           const [listed] = yield* clients.list;
           expect(listed).toMatchObject({ environmentId: AIR, label: "Kyle’s MacBook Air" });
@@ -119,7 +120,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
           Effect.flatMap((clients) => clients.authenticate(second)),
           Effect.provide(f.layer),
         );
-        expect(restarted).toEqual(Option.some({ device: "kyle-s-macbook-air" }));
+        expect(Option.map(restarted, (c) => c.device)).toEqual(Option.some("kyle-s-macbook-air"));
       }),
   );
 
@@ -208,6 +209,37 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         }).pipe(Effect.provide(f.layer));
         expect(restarted).toEqual({ listed: [AIR], air: true });
       }),
+  );
+
+  it.effect("signals when a credential stops working, and not when the Library renews it", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.tickets = { ["m".repeat(64)]: MINI };
+      f.state.active = [AIR, MINI];
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        const watch = (credential: Redacted.Redacted<string>) =>
+          clients.authenticate(Redacted.value(credential)).pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.die(new Error("Credential refused")),
+                onSome: (computer) => Effect.forkChild(computer.ended),
+              }),
+            ),
+          );
+        const air = yield* watch(yield* clients.enroll("t".repeat(64)));
+        const mini = yield* watch(yield* clients.enroll("m".repeat(64)));
+        yield* clients.check;
+        yield* clients.revoke(MINI);
+        yield* Fiber.join(mini);
+        expect(air.pollUnsafe()).toBeUndefined();
+        const replaced = yield* watch(yield* clients.enroll("t".repeat(64)));
+        yield* Fiber.join(air);
+        f.state.library = "down";
+        yield* TestClock.adjust("1 day");
+        yield* Fiber.join(replaced);
+      }).pipe(Effect.provide(f.layer));
+    }),
   );
 
   it.effect("issues nothing unless sharing, and never to the hub itself", () =>

@@ -13,6 +13,7 @@ import * as ByteSize from "effect/ByteSize";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -88,10 +89,15 @@ export class SwitchboardClients extends Context.Service<
     readonly enroll: (
       ticket: string,
     ) => Effect.Effect<Redacted.Redacted<string>, SwitchboardAccountError>;
-    /** The computer a gateway credential belongs to, if any. */
+    /**
+     * The computer a gateway credential belongs to, if any. `ended` completes once the credential
+     * stops working: revoked, replaced, dropped by the Library or past its lease.
+     */
     readonly authenticate: (
       credential: string,
-    ) => Effect.Effect<Option.Option<{ readonly device: string }>>;
+    ) => Effect.Effect<
+      Option.Option<{ readonly device: string; readonly ended: Effect.Effect<void> }>
+    >;
     readonly list: Effect.Effect<ReadonlyArray<SwitchboardComputer>>;
     readonly revoke: (environmentId: EnvironmentId) => Effect.Effect<void, SwitchboardAccountError>;
     /** Drops computers the Library no longer confirms as members, and renews the rest. */
@@ -123,6 +129,8 @@ const make = Effect.gen(function* () {
   );
   let computers = new Map(stored.map((entry) => [entry.membership.environmentId, entry]));
   let byHash = new Map(stored.map((entry) => [entry.credentialHash, entry]));
+  /** Completes, and is replaced, on every change to the computers. */
+  let changed = Deferred.makeUnsafe<void>();
 
   const hash = (value: string) =>
     digest
@@ -135,7 +143,22 @@ const make = Effect.gen(function* () {
     yield* secrets.set(STORE, new TextEncoder().encode(text));
     computers = new Map(next);
     byHash = new Map([...next.values()].map((entry) => [entry.credentialHash, entry]));
+    const previous = changed;
+    changed = Deferred.makeUnsafe();
+    yield* Deferred.succeed(previous, undefined);
   }, Effect.mapError(unavailable));
+
+  const ended = Effect.fn("SwitchboardClients.ended")(function* (credentialHash: string) {
+    for (;;) {
+      const signal = changed;
+      const entry = byHash.get(credentialHash);
+      const now = yield* Clock.currentTimeMillis;
+      if (entry === undefined || now >= leaseEnd(entry)) return;
+      yield* Deferred.await(signal).pipe(
+        Effect.raceFirst(Effect.sleep(Duration.millis(leaseEnd(entry) - now))),
+      );
+    }
+  });
 
   const library = Effect.gen(function* () {
     const current = yield* connection.current;
@@ -243,7 +266,7 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       if (entry === undefined || now >= leaseEnd(entry)) return Option.none();
       lastUsed.set(entry.membership.environmentId, now);
-      return Option.some({ device: entry.device });
+      return Option.some({ device: entry.device, ended: ended(entry.credentialHash) });
     }),
     list: Effect.sync(() =>
       [...computers.values()].map((entry) => ({

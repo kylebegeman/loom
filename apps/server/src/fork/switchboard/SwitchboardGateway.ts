@@ -64,6 +64,8 @@ const DROP_RESPONSE = new Set([
   "access-control-allow-credentials",
 ]);
 const NO_STORE = { "cache-control": "no-store, no-transform" };
+// Bounds how long a socket outlives its credential check, as when the hub key rotates.
+const SOCKET_LIFETIME = "1 hour";
 export class SwitchboardGatewayError extends Schema.TaggedError<SwitchboardGatewayError>()(
   "SwitchboardGatewayError",
   {
@@ -230,7 +232,16 @@ const make = Effect.gen(function* () {
             yield* Effect.raceFirst(
               pump(clientReader, serverWriter),
               pump(serverReader, clientWriter),
-            ).pipe(Effect.ignore);
+            ).pipe(
+              Effect.raceFirst(
+                Option.match(computer, {
+                  onNone: () => Effect.never,
+                  onSome: (entry) => entry.ended,
+                }),
+              ),
+              Effect.timeout(SOCKET_LIFETIME),
+              Effect.ignore,
+            );
             return HttpServerResponse.empty();
           }),
         ).pipe(Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })));
