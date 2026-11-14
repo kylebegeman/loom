@@ -57,7 +57,7 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
-import { layerThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
+import { layerThreadWorktreeRestore } from "../workspace/restoreWorktree.ts"; // fork: project-lifecycle
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
@@ -288,7 +288,7 @@ export const layerThreadManagementProvided = ThreadManagementService.layerWithLe
       layerLegacyV1ThreadImporterProvided,
       layerCommandReceiptStoreProvided,
       layerProviderSessionManagerProvided,
-      layerThreadWorktreeRestore,
+      layerThreadWorktreeRestore.pipe(Layer.provide(ProjectionStore.layer)), // fork: project-lifecycle
     ),
   ),
 );

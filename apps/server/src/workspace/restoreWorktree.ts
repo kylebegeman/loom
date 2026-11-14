@@ -2,6 +2,7 @@ import type { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Path from "effect/Path";
@@ -12,7 +13,9 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts";
+import { ThreadWorktreeRestore, WorktreeRecreateError } from "./restoreMissingWorktree.ts";
 import * as SetupMarker from "./setupMarker.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
@@ -286,3 +289,29 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   });
   return yield* input.workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
 });
+
+// Sends restore a released checkout the way turn start does, so its saved work and setup return.
+export const layerThreadWorktreeRestore = Layer.effect(
+  ThreadWorktreeRestore,
+  Effect.gen(function* () {
+    const context = yield* Effect.context<Effect.Services<ReturnType<typeof restoreWorktree>>>();
+    const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+    return {
+      restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread) {
+        const { worktreePath, branch } = thread;
+        if (worktreePath === null || branch === null) return;
+        if (!(yield* isManagedWorktreePath(worktreePath))) return;
+        yield* restoreWorktree({
+          threadId: thread.id,
+          projectId: thread.projectId,
+          worktreePath,
+          branch,
+          clearLeftovers: true,
+        }).pipe(
+          Effect.provide(context),
+          Effect.mapError((cause) => new WorktreeRecreateError({ worktreePath, branch, cause })),
+        );
+      }),
+    };
+  }),
+);

@@ -4,8 +4,12 @@ import { expect, it } from "@effect/vitest";
 import {
   CheckpointRef,
   CheckpointScopeId,
+  CommandId,
   GitCommandError,
+  MessageId,
+  type OrchestrationV2ThreadProjection,
   ProjectId,
+  ProviderInstanceId,
   RunId,
   type TerminalEvent,
   ThreadId,
@@ -13,19 +17,26 @@ import {
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
+import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import { restoreWorktree } from "./restoreWorktree.ts";
+import { layerThreadWorktreeRestore, restoreWorktree } from "./restoreWorktree.ts";
 import * as SetupMarker from "./setupMarker.ts";
 
 const layer = GitVcsDriver.layer.pipe(
@@ -82,74 +93,72 @@ const fixture = Effect.gen(function* () {
   let contextReads = 0;
   let setupCalls = 0;
   const setupErrors: Array<string | null | undefined> = [];
-  const restore = (options?: {
+  const services = (options?: {
     readonly checkpoints?: ProjectionStore.ProjectionCheckpointContext;
     readonly git?: GitVcsDriver.GitVcsDriver["Service"];
     readonly createWorktree?: GitWorkflow.GitWorkflowService["Service"]["createWorktree"];
     readonly failSetup?: boolean;
     readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   }) =>
-    restoreWorktree(input).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          Layer.mock(GitWorkflow.GitWorkflowService)({
-            hasCommit: ({ cwd: workdir, refName }) =>
-              driver
-                .execute({
-                  operation: "restore-worktree-test.hasCommit",
-                  cwd: workdir,
-                  args: ["rev-parse", "--verify", `${refName}^{commit}`],
-                  allowNonZeroExit: true,
-                })
-                .pipe(Effect.map((result) => result.exitCode === 0)),
-            pruneWorktrees: driver.pruneWorktrees,
-            createWorktree: options?.createWorktree ?? driver.createWorktree,
+    Layer.mergeAll(
+      Layer.mock(GitWorkflow.GitWorkflowService)({
+        hasCommit: ({ cwd: workdir, refName }) =>
+          driver
+            .execute({
+              operation: "restore-worktree-test.hasCommit",
+              cwd: workdir,
+              args: ["rev-parse", "--verify", `${refName}^{commit}`],
+              allowNonZeroExit: true,
+            })
+            .pipe(Effect.map((result) => result.exitCode === 0)),
+        pruneWorktrees: driver.pruneWorktrees,
+        createWorktree: options?.createWorktree ?? driver.createWorktree,
+      }),
+      Layer.succeed(GitVcsDriver.GitVcsDriver, options?.git ?? driver),
+      Layer.mock(ProjectService.ProjectService)({
+        getById: () => Effect.succeedSome({ workspaceRoot: root } as never),
+      }),
+      Layer.mock(ProjectionStore.ProjectionStoreV2)({
+        getCheckpointContext: () =>
+          Effect.sync(() => {
+            contextReads++;
+            return options?.checkpoints ?? context;
           }),
-          Layer.succeed(GitVcsDriver.GitVcsDriver, options?.git ?? driver),
-          Layer.mock(ProjectService.ProjectService)({
-            getById: () => Effect.succeedSome({ workspaceRoot: root } as never),
+      }),
+      Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+        runForThread:
+          options?.runSetup ??
+          (() =>
+            Effect.sync(() => {
+              setupCalls++;
+              return options?.failSetup
+                ? {
+                    status: "started",
+                    scriptId: "setup",
+                    scriptName: "Setup",
+                    scriptCommand: "setup",
+                    terminalId: "setup",
+                    cwd,
+                    async: false,
+                    completion: Effect.succeed({ exitCode: 1, durationMs: 1 }),
+                  }
+                : { status: "no-script" };
+            })),
+      }),
+      Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({
+        begin: () => Effect.void,
+        stageStatus: () => Effect.void,
+        update: () => Effect.void,
+        appendTail: () => Effect.void,
+        finish: (_threadId, _phase, error) =>
+          Effect.sync(() => {
+            setupErrors.push(error);
+            return null;
           }),
-          Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getCheckpointContext: () =>
-              Effect.sync(() => {
-                contextReads++;
-                return options?.checkpoints ?? context;
-              }),
-          }),
-          Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
-            runForThread:
-              options?.runSetup ??
-              (() =>
-                Effect.sync(() => {
-                  setupCalls++;
-                  return options?.failSetup
-                    ? {
-                        status: "started",
-                        scriptId: "setup",
-                        scriptName: "Setup",
-                        scriptCommand: "setup",
-                        terminalId: "setup",
-                        cwd,
-                        async: false,
-                        completion: Effect.succeed({ exitCode: 1, durationMs: 1 }),
-                      }
-                    : { status: "no-script" };
-                })),
-          }),
-          Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({
-            begin: () => Effect.void,
-            stageStatus: () => Effect.void,
-            update: () => Effect.void,
-            appendTail: () => Effect.void,
-            finish: (_threadId, _phase, error) =>
-              Effect.sync(() => {
-                setupErrors.push(error);
-                return null;
-              }),
-          }),
-        ),
-      ),
+      }),
     );
+  const restore = (options?: Parameters<typeof services>[0]) =>
+    restoreWorktree(input).pipe(Effect.provide(services(options)));
   return {
     fs,
     driver,
@@ -161,6 +170,7 @@ const fixture = Effect.gen(function* () {
     input,
     context,
     restore,
+    services,
     counts: () => ({ contextReads, setupCalls }),
     setupErrors: () => setupErrors,
   };
@@ -269,6 +279,79 @@ it.live("restores a missing branch from its exact saved HEAD and working files",
     expect(yield* f.fs.readFileString(`${f.root}/root-only.txt`)).toBe(
       "keep the existing checkout\n",
     );
+    expect(f.counts()).toEqual({ contextReads: 1, setupCalls: 1 });
+  }).pipe(Effect.provide(layer), Effect.scoped),
+);
+
+it.live("a send restores a released managed worktree with its saved work and setup", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const path = yield* Path.Path;
+    const dispatched: Array<string> = [];
+    const layerSend = ThreadManagementService.layerWithLegacyImporter.pipe(
+      Layer.provide(layerThreadWorktreeRestore.pipe(Layer.provide(f.services()))),
+      Layer.provide(
+        Layer.mock(LegacyV1ThreadImporter.LegacyV1ThreadImporter)({
+          ensureTranscript: () =>
+            Effect.succeed({ importedThreadCount: 0, importedMessageCount: 0 }),
+        }),
+      ),
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadRecords: () =>
+            Effect.succeed({
+              thread: {
+                id: f.input.threadId,
+                projectId: f.input.projectId,
+                deletedAt: null,
+                archivedAt: null,
+                worktreePath: f.cwd,
+                branch: f.input.branch,
+                modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+              },
+              runs: [],
+              providerTurns: [],
+              messages: [],
+              turnItems: [],
+            } as unknown as OrchestrationV2ThreadProjection),
+          dispatch: (command) =>
+            Effect.sync(() => {
+              dispatched.push(command.type);
+              return { sequence: 1, storedEvents: [] } as never;
+            }),
+        }),
+      ),
+      // The checkout sits two levels below this folder, where a managed worktree lives.
+      Layer.provide(
+        ServerSettings.layerTest({ worktreesDirectory: path.dirname(path.dirname(f.cwd)) }),
+      ),
+      Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory))),
+    );
+    const error = yield* ThreadManagementService.ThreadManagementService.pipe(
+      Effect.flatMap((threads) =>
+        threads.sendToThread({
+          projectId: f.input.projectId,
+          threadId: f.input.threadId,
+          commandId: CommandId.make("command:restore-worktree:send"),
+          messageId: MessageId.make("message:restore-worktree:send"),
+          text: "Reply with ok.",
+          attachments: [],
+          mode: "auto",
+          createdBy: "agent",
+          creationSource: "mcp",
+        }),
+      ),
+      Effect.flip,
+      Effect.provide(layerSend),
+    );
+    // The mock records no message, so a dispatched send ends in the projection read.
+    expect(error._tag).toBe("ThreadManagementDurableRunProjectionError");
+    expect(dispatched).toEqual(["message.dispatch"]);
+    expect((yield* f.command(["rev-parse", "HEAD"], f.cwd)).stdout.trim()).toBe(f.head);
+    expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("saved work\n");
+    expect(yield* f.fs.readFileString(`${f.cwd}/note.txt`)).toBe("saved new file\n");
+    expect(yield* SetupMarker.exists(f.cwd)).toBe(false);
     expect(f.counts()).toEqual({ contextReads: 1, setupCalls: 1 });
   }).pipe(Effect.provide(layer), Effect.scoped),
 );

@@ -273,9 +273,10 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
       <DialogPopup className="max-w-md">
         <DialogHeader>
           <DialogTitle>Link an environment</DialogTitle>
+          {/* fork: fleet-connections */}
           <DialogDescription>
-            Agents here can then launch, message and wait on threads there. It appears under
-            Authorized clients in that environment's Sharing & access, where it can be revoked.
+            Agents here can then launch, message and wait on threads there. It appears under Devices
+            with access in that environment's Sharing & access, where it can be revoked.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -341,9 +342,10 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                   spellCheck={false}
                 />
                 {machine !== null ? (
+                  // fork: fleet-connections
                   <span className="block text-xs text-muted-foreground">
-                    Create a link on {machine.label}: Settings → Sharing & access → Authorized
-                    clients → Create link, then paste its code here.
+                    Create a link on {machine.label}: Settings → Sharing & access → Devices with
+                    access → Create link, then paste its code here.
                   </span>
                 ) : null}
               </label>

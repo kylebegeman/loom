@@ -5,7 +5,7 @@ import { useAtomCommand } from "../../../state/use-atom-command";
 import { serverEnvironment } from "../../../state/server";
 import { useEnvironmentScope } from "../../../state/session";
 import { Switch } from "react-native";
-import { AppText as Text } from "../../../components/ui/AppText";
+import { AppText as Text } from "../../../components/ui/AppText"; // fork: source-control-cockpit
 import { resolveDefaultBranchActionDialogCopy } from "@t3tools/client-runtime/state/vcs";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveAutoFeatureBranchName } from "@t3tools/shared/git";

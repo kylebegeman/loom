@@ -353,7 +353,7 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
 apps/server/src/orchestration-v2/ThreadFork.execution.test.ts	deleted-history	1
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
-apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	5
+apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	7
 apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	15
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
 apps/server/src/project/ProjectSetupScriptRunner.test.ts	project-lifecycle	5
@@ -990,7 +990,7 @@ apps/mobile/src/features/threads/GitActionProgressOverlay.tsx	source-control-coc
 apps/mobile/src/features/threads/ThreadGitControls.tsx	source-control-cockpit	7
 apps/mobile/src/features/threads/ThreadGitControls.tsx	checkpoint-capable	3
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	source-control-cockpit	3
-apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	10
+apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	11
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	checkpoint-capable	2
 apps/mobile/src/features/threads/useThreadHeaderOptions.test.tsx	source-control-cockpit	6
@@ -1080,6 +1080,10 @@ packages/client-runtime/src/connection/supervisor.ts	reach	4
 packages/client-runtime/src/state/presentation.ts	fleet-connections	4
 apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	fleet-connections	1
 apps/mobile/src/features/threads/DraftEnvironmentControl.tsx	fleet-connections	1
+apps/mobile/src/features/threads/LinkRequestCard.tsx	fleet-connections	2
+apps/server/src/cli/environment.ts	fleet-connections	1
+apps/web/src/components/chat/LinkRequestCard.tsx	fleet-connections	1
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	fleet-connections	2
 apps/web/src/components/chat/useComposerSend.ts	fleet-connections	15
 apps/web/src/components/chat/useSystemComposerBanners.tsx	fleet-connections	8
 apps/web/src/components/settings/AddEnvironmentDialog.browser.test.tsx	fleet-connections	5
@@ -1609,7 +1613,7 @@ apps/web/src/components/settings/DatabaseStorageNotice.tsx	project-lifecycle	10
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	project-lifecycle	2
 apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-lifecycle	3
 packages/shared/package.json	-	"./fork/compatibility"
-apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
+apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	6
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
 apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4

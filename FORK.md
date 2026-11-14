@@ -1436,6 +1436,10 @@ See [Connections help](docs/fork/user/connections.md).
 | `scripts/lib/public-config.test.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `scripts/lib/public-config.ts`                                               | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx`              | `fleet-connections` | Describe host sharing using the computer terminology.                      |
+| `apps/mobile/src/features/threads/LinkRequestCard.tsx`                       | `fleet-connections` | Name the Devices with access section in link instructions.                 |
+| `apps/server/src/cli/environment.ts`                                         | `fleet-connections` | Name the Devices with access section in link instructions.                 |
+| `apps/web/src/components/chat/LinkRequestCard.tsx`                           | `fleet-connections` | Name the Devices with access section in link instructions.                 |
+| `apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx`            | `fleet-connections` | Name the Devices with access section in link instructions.                 |
 | `packages/shared/src/cliRelease.test.ts`                                     | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/shared/src/cliRelease.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/ssh/src/tunnel.test.ts`                                            | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |

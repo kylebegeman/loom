@@ -104,8 +104,9 @@ const environmentLinkCommand = Command.make("link", {
   ),
 }).pipe(
   Command.withDescription(
+    // fork: fleet-connections
     // fork: brand
-    "Link another Loom environment, so agents here can work there. It shows up there under Authorized clients in Settings → Sharing & access, where it can be revoked.",
+    "Link another Loom environment, so agents here can work there. It shows up there under Devices with access in Settings → Sharing & access, where it can be revoked.",
   ),
   Command.withHandler((flags) =>
     runWithPeerLinks(flags, (links) =>

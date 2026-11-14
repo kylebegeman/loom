@@ -24,7 +24,7 @@ import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts"; // fork: machine-updates
 // fork: machine-updates
-import { makeIdleWindowLifetime } from "../fork/machine-updates/IdleWindowLifetime.ts"; // fork: machine-updates
+import { makeIdleWindowLifetime } from "../fork/machine-updates/IdleWindowLifetime.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",

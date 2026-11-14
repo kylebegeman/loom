@@ -379,9 +379,10 @@ function LinkRequestDialog(props: {
                           nativeInput
                           spellCheck={false}
                         />
+                        {/* fork: fleet-connections */}
                         <span className="block text-xs text-muted-foreground">
-                          Create a link on {targetName}: Settings → Sharing & access → Authorized
-                          clients → Create link, then paste its code here.
+                          Create a link on {targetName}: Settings → Sharing & access → Devices with
+                          access → Create link, then paste its code here.
                         </span>
                       </label>
                     )}
